@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SonosStreamDeck Settings</title>
+    <style>
+      :root {
+        --bg-0: #0d131a;
+        --bg-1: #16222d;
+        --panel: rgba(255, 255, 255, 0.06);
+        --panel-border: rgba(255, 255, 255, 0.1);
+        --text: #eef6ff;
+        --muted: #b3c2d0;
+        --accent: #ff8a50;
+        --accent-soft: rgba(255, 138, 80, 0.18);
+        --good: #4db6ac;
+        --warn: #ffd166;
+        --bad: #ff6b6b;
+        color-scheme: dark;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 16px;
+        background:
+          radial-gradient(circle at top right, rgba(255, 138, 80, 0.18), transparent 34%),
+          linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+        color: var(--text);
+      }
+
+      main {
+        display: grid;
+        gap: 14px;
+      }
+
+      .panel {
+        border: 1px solid var(--panel-border);
+        border-radius: 16px;
+        padding: 14px;
+        background: var(--panel);
+        backdrop-filter: blur(8px);
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: auto -18px -26px auto;
+        width: 120px;
+        height: 120px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(255, 138, 80, 0.42), transparent 70%);
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #ffbf9c;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 22px;
+        line-height: 1.1;
+      }
+
+      h2 {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .hero p,
+      .meta,
+      .hint,
+      .status-copy,
+      label span,
+      .empty {
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .hero-copy {
+        display: grid;
+        gap: 8px;
+        max-width: 260px;
+      }
+
+      .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: fit-content;
+        margin-top: 12px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        font-size: 12px;
+      }
+
+      .hero-badge::before {
+        content: "";
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 12px rgba(255, 138, 80, 0.8);
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 112px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.07);
+        font-size: 12px;
+      }
+
+      .status-pill::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--warn);
+      }
+
+      .status-pill[data-status="connected"]::before {
+        background: var(--good);
+      }
+
+      .status-pill[data-status="authorizing"]::before {
+        background: var(--warn);
+      }
+
+      .status-pill[data-status="error"]::before {
+        background: var(--bad);
+      }
+
+      .stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+      }
+
+      input,
+      select,
+      button {
+        width: 100%;
+        border: 0;
+        border-radius: 12px;
+        font: inherit;
+      }
+
+      input,
+      select {
+        padding: 11px 12px;
+        color: var(--text);
+        background: rgba(7, 13, 18, 0.64);
+        outline: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      input:focus,
+      select:focus {
+        outline: 1px solid rgba(255, 138, 80, 0.7);
+      }
+
+      button {
+        padding: 11px 12px;
+        cursor: pointer;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+        transition:
+          transform 120ms ease,
+          background 120ms ease;
+      }
+
+      button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        background: rgba(255, 255, 255, 0.14);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .button-primary {
+        background: linear-gradient(135deg, var(--accent) 0%, #ffb347 100%);
+        color: #10151b;
+        font-weight: 700;
+      }
+
+      .button-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .meta {
+        font-size: 12px;
+      }
+
+      .hint {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        font-size: 12px;
+      }
+
+      .hint[data-tone="warm"] {
+        background: var(--accent-soft);
+        color: #ffe7d9;
+      }
+
+      .hint[data-tone="bad"] {
+        background: rgba(255, 107, 107, 0.14);
+        color: #ffd9d9;
+      }
+
+      .empty {
+        padding: 12px;
+        border: 1px dashed rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        text-align: center;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="panel hero">
+        <div class="eyebrow">SonosStreamDeck</div>
+        <div class="hero-copy">
+          <h1>Connect once, target each key precisely.</h1>
+          <p>
+            Global settings keep the broker connection metadata. Each action stores
+            only its selected Sonos group.
+          </p>
+        </div>
+        <div class="hero-badge" id="hero-badge">Waiting for broker connection</div>
+      </section>
+
+      <section class="panel stack">
+        <div class="status-row">
+          <h2>Connection</h2>
+          <div class="status-pill" data-status="disconnected" id="connection-pill">
+            Disconnected
+          </div>
+        </div>
+
+        <label>
+          <span>Broker Base URL</span>
+          <input
+            id="service-base-url"
+            name="service-base-url"
+            type="url"
+            inputmode="url"
+            placeholder="http://127.0.0.1:47831"
+          />
+        </label>
+
+        <div class="button-row">
+          <button class="button-primary" id="connect-button" type="button">
+            Connect Sonos
+          </button>
+          <button id="refresh-groups-button" type="button">Refresh Groups</button>
+        </div>
+
+        <p class="status-copy meta" id="connection-copy">
+          The broker has not been connected yet.
+        </p>
+
+        <div class="hint" id="connection-hint">
+          Use the local broker stub during development, then replace the base URL
+          with your real integration service later.
+        </div>
+
+        <a
+          class="meta"
+          href="#"
+          id="auth-link"
+          rel="noopener noreferrer"
+          style="display: none; color: #ffd9c3"
+          target="_blank"
+          >Continue Sonos sign-in</a
+        >
+      </section>
+
+      <section class="panel stack">
+        <div class="status-row">
+          <h2>Action Target</h2>
+          <div class="meta" id="groups-status-copy">Idle</div>
+        </div>
+
+        <label>
+          <span>Sonos Group</span>
+          <select id="group-select" disabled>
+            <option value="">Connect Sonos to load groups</option>
+          </select>
+        </label>
+
+        <p class="meta" id="selected-group-copy">
+          This action has not been assigned to a Sonos group yet.
+        </p>
+
+        <div class="hint" id="groups-hint">
+          Group choices are discovered live from the broker and stored per action.
+        </div>
+
+        <div class="empty" id="groups-empty">
+          No groups loaded yet.
+        </div>
+      </section>
+    </main>
+
+    <script src="settings.js"></script>
+  </body>
+</html>

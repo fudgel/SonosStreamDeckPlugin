@@ -1,0 +1,168 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Name": "SonosStreamDeck",
+  "Version": "0.1.0.0",
+  "Author": "SonosStreamDeck",
+  "CodePath": "bin/plugin.js",
+  "Description": "Control Sonos playback from Stream Deck.",
+  "Icon": "imgs/plugin/marketplace",
+  "Category": "SonosStreamDeck",
+  "CategoryIcon": "imgs/plugin/category-icon",
+  "PropertyInspectorPath": "ui/settings.html",
+  "SDKVersion": 3,
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "Nodejs": {
+    "Version": "24",
+    "Debug": "enabled"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "UUID": "com.sonosstreamdeck.plugin",
+  "Actions": [
+    {
+      "Name": "Play / Pause",
+      "UUID": "com.sonosstreamdeck.plugin.play-pause",
+      "Icon": "imgs/actions/play-pause/icon",
+      "Tooltip": "Toggle Sonos playback.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "DisableAutomaticStates": true,
+      "States": [
+        {
+          "Image": "imgs/actions/play-pause/key-off",
+          "Name": "Paused",
+          "Title": "Play",
+          "TitleAlignment": "bottom"
+        },
+        {
+          "Image": "imgs/actions/play-pause/key-on",
+          "Name": "Playing",
+          "Title": "Pause",
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "Name": "Mute / Unmute",
+      "UUID": "com.sonosstreamdeck.plugin.mute-toggle",
+      "Icon": "imgs/actions/mute-toggle/icon",
+      "Tooltip": "Toggle Sonos group mute.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "DisableAutomaticStates": true,
+      "States": [
+        {
+          "Image": "imgs/actions/mute-toggle/key-off",
+          "Name": "Unmuted",
+          "Title": "Mute",
+          "TitleAlignment": "bottom"
+        },
+        {
+          "Image": "imgs/actions/mute-toggle/key-on",
+          "Name": "Muted",
+          "Title": "Unmute",
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "Name": "Next Track",
+      "UUID": "com.sonosstreamdeck.plugin.next-track",
+      "Icon": "imgs/actions/next-track/icon",
+      "Tooltip": "Skip to the next Sonos track.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/next-track/key",
+          "Title": "Next",
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "Name": "Previous Track",
+      "UUID": "com.sonosstreamdeck.plugin.previous-track",
+      "Icon": "imgs/actions/previous-track/icon",
+      "Tooltip": "Skip to the previous Sonos track.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/previous-track/key",
+          "Title": "Prev",
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "Name": "Play Mode",
+      "UUID": "com.sonosstreamdeck.plugin.play-mode",
+      "Icon": "imgs/actions/play-mode/icon",
+      "Tooltip": "Cycle Sonos play mode.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/play-mode/key",
+          "Title": "Mode",
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "Name": "Album Art",
+      "UUID": "com.sonosstreamdeck.plugin.album-art",
+      "Icon": "imgs/actions/album-art/icon",
+      "Tooltip": "Display current Sonos album art.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/album-art/key",
+          "Title": "Art",
+          "TitleAlignment": "bottom"
+        }
+      ]
+    },
+    {
+      "Name": "Now Playing",
+      "UUID": "com.sonosstreamdeck.plugin.now-playing-encoder",
+      "Icon": "imgs/actions/now-playing-encoder/icon",
+      "Tooltip": "Compact now-playing display for Stream Deck Plus.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Push": "Play / Pause",
+          "Touch": "Play / Pause",
+          "Rotate": "Reserved",
+          "LongTouch": "Next Track"
+        }
+      },
+      "States": [
+        {
+          "Image": "imgs/actions/now-playing-encoder/key"
+        }
+      ]
+    }
+  ]
+}

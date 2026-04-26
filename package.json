@@ -1,0 +1,29 @@
+{
+  "name": "sonos-streamdeck",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stream Deck plugin scaffold for Sonos control.",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.sonosstreamdeck.plugin\"",
+    "validate": "streamdeck validate com.sonosstreamdeck.plugin.sdPlugin",
+    "broker:stub": "node scripts/sonos-broker-stub.mjs",
+    "broker:stub:watch": "node --watch scripts/sonos-broker-stub.mjs"
+  },
+  "dependencies": {
+    "@elgato/streamdeck": "^2.1.0"
+  },
+  "devDependencies": {
+    "@elgato/cli": "^1.7.4",
+    "@rollup/plugin-commonjs": "^29.0.2",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@tsconfig/node20": "^20.1.9",
+    "@types/node": "^24.10.1",
+    "rollup": "^4.60.2",
+    "tslib": "^2.8.1",
+    "typescript": "^6.0.3"
+  }
+}
