@@ -351,6 +351,8 @@ The repo includes a lightweight project brain in `docs/`.
 - [docs/sonos-service-contract.md](./docs/sonos-service-contract.md)
 - [docs/troubleshooting.md](./docs/troubleshooting.md)
 
+If you want to contribute, start with [CONTRIBUTING.md](./CONTRIBUTING.md).
+
 ## Current Status Summary
 
 - build verified locally

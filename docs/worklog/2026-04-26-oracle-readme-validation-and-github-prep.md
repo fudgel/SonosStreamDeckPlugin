@@ -20,3 +20,5 @@ Validate the expanded README and core Sonos Brain docs with Oracle, reconcile an
 ## Notes
 
 - the repository is otherwise in a good state for an initial public push: build passes, Stream Deck validation passes, and the docs now align more closely with the current implementation milestone
+- GitHub Discussions were enabled for broader architecture and roadmap feedback
+- a root `CONTRIBUTING.md` was added so outside contributors have a documented local workflow and doc-update expectations
