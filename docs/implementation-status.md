@@ -134,6 +134,6 @@ The product is the installable Stream Deck plugin.
 
 ## Next Recommended Steps
 
-1. replace stub auth and group discovery with the real broker-backed Sonos flow
-2. upgrade album-art handling from stub data URIs to real fetched or proxied artwork
+1. **Production milestone (Ralph loops 08–14):** see [ralph/IMPLEMENTATION_PLAN-production.md](../ralph/IMPLEMENTATION_PLAN-production.md) — real Sonos broker at `services/sonos-broker/`, OAuth, subscriptions, stub dev-only
+2. upgrade album-art handling from stub data URIs to real fetched or proxied artwork (production URLs from Sonos metadata)
 3. extend capability-aware rendering (images/disabled states beyond title text)

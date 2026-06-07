@@ -1,0 +1,8 @@
+{
+  "name": "@sonosstreamdeck/sonos-broker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Production Sonos broker for SonosStreamDeck (Control API + plugin contract).",
+  "main": "src/server.mjs"
+}

@@ -16,6 +16,11 @@
     "broker:stub": "node scripts/broker-stub.mjs start --foreground",
     "broker:stub:watch": "node scripts/broker-stub.mjs start --foreground --watch",
     "broker:test": "bash scripts/broker-stub-test.sh",
+    "broker:prod": "node scripts/broker-prod.mjs start --foreground",
+    "broker:prod:start": "node scripts/broker-prod.mjs start",
+    "broker:prod:stop": "node scripts/broker-prod.mjs stop",
+    "broker:prod:restart": "node scripts/broker-prod.mjs restart",
+    "broker:prod:status": "node scripts/broker-prod.mjs status",
     "smoke": "node scripts/smoke.mjs",
     "test": "node scripts/smoke.mjs"
   },

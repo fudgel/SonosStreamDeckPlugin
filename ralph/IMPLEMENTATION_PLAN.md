@@ -20,7 +20,7 @@ Run loops **01 → 07** in order. Do not start the next loop until the current v
 
 ## Current loop
 
-Stub milestone complete — next phase is production broker integration.
+Stub milestone complete (`a90ba78`). **Start Phase 2:** [IMPLEMENTATION_PLAN-production.md](./IMPLEMENTATION_PLAN-production.md) — Loop 08 production broker scaffold.
 
 ## Progress log
 

@@ -6,3 +6,5 @@ com.sonosstreamdeck.plugin.sdPlugin/bin/
 com.sonosstreamdeck.plugin.sdPlugin/logs/
 .broker-stub.pid
 .broker-stub.log
+.broker-prod.pid
+.broker-prod.log

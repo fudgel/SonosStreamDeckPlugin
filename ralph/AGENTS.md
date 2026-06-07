@@ -66,3 +66,17 @@ bash ralph/verify/07-stub-milestone-e2e.sh
 ```
 
 Or: `bash ralph/verify/run-all.sh`
+
+## Phase 2 — Production Sonos (loops 08–14)
+
+- Plan: `ralph/IMPLEMENTATION_PLAN-production.md`
+- Start Loop 08: production broker at `services/sonos-broker/` (port `47832`); keep stub on `47831` for CI
+- OAuth + subscriptions require public HTTPS callbacks — see `docs/sonos-api-notes.md`
+- Verify: `bash ralph/verify/run-all-production.sh`
+- **Do not** change plugin `/v1/sonos/*` contract unless ADR + contract doc updated
+
+## Loop 08 — Production broker scaffold
+
+- `services/sonos-broker/` on port **47832**; lifecycle via `scripts/broker-prod.mjs` (`npm run broker:prod:*`).
+- `/health` returns `{ service: "sonos-broker", sonosConfigured }`.
+- Routes exist; return `not_configured` / `not_connected` until loops 09–12 wire Sonos API.
