@@ -52,6 +52,7 @@ Initial checks:
 - click `Connect Sonos` again and complete the opened stub auth page
 - confirm the property inspector eventually shows `Connected`
 - inspect Stream Deck logs for `com.sonosstreamdeck.plugin` restart activity and connection failures
+- if connect or group assignment fails in Stream Deck, see [worklog/2026-06-07-stream-deck-connect-investigation.md](./worklog/2026-06-07-stream-deck-connect-investigation.md) (resolution + PI Web Inspector notes)
 
 ### Groups do not load in the property inspector
 

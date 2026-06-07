@@ -1,17 +1,16 @@
 import {
   action,
   type DidReceiveSettingsEvent,
-  type KeyDownEvent,
-  SingletonAction,
   type WillAppearEvent,
   type WillDisappearEvent,
 } from "@elgato/streamdeck"
 
+import { SonosAction } from "./sonos-action"
 import { pluginCore } from "../core/plugin-core"
 import type { SonosActionSettings } from "../core/settings"
 
 @action({ UUID: "com.sonosstreamdeck.plugin.album-art" })
-export class AlbumArtAction extends SingletonAction<SonosActionSettings> {
+export class AlbumArtAction extends SonosAction {
   override async onWillAppear(
     ev: WillAppearEvent<SonosActionSettings>,
   ): Promise<void> {
@@ -30,7 +29,5 @@ export class AlbumArtAction extends SingletonAction<SonosActionSettings> {
     pluginCore.unregisterVisibleAction(ev.action)
   }
 
-  override async onKeyDown(ev: KeyDownEvent<SonosActionSettings>): Promise<void> {
-    await ev.action.showAlert()
-  }
+  // Display-only action. Presses intentionally do nothing.
 }

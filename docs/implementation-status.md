@@ -66,6 +66,7 @@ Implemented command mapping:
 - `subscribe(...)` now listens to broker SSE updates and retries retryable disconnects
 - local playback progress estimation runs on a 1 Hz timer for album-art keys and the now-playing encoder
 - real playback metadata now drives key titles, dial feedback, progress, and dynamic SVG album art
+- target state now carries current track and album identity alongside artwork URLs so future real-art fetching can stay bound to the exact Sonos item being played
 
 ### Property Inspector Behavior
 
@@ -88,6 +89,17 @@ Implemented command mapping:
 
 ## Current Gaps And In-Progress Areas
 
+### Stream Deck stub E2E (resolved 2026-06-07)
+
+Connect, group assignment, and play/pause commands work against the local broker stub via PI `fetch` + **`setGlobalSettings`** (including `actionTargets[context]`). PI `sendToPlugin` / `setSettings` were not observed reaching the plugin on Stream Deck 7.x in this install.
+
+See [worklog/2026-06-07-stream-deck-connect-investigation.md](./worklog/2026-06-07-stream-deck-connect-investigation.md) for the full investigation arc, resolution, and follow-ups (SSE subscription, dead PI paths).
+
+### SSE / live state (in progress)
+
+- commands succeed after group assignment
+- state subscription may warn `service_unreachable` on stub SSE path; encoder/album art feedback still needs verification
+
 ### Production Broker Integration
 
 - auth and group discovery are still stub-backed, not real Sonos production flows
@@ -96,6 +108,7 @@ Implemented command mapping:
 ### Album Art
 
 - current album art is either broker-provided data URIs or plugin-generated SVG fallback art
+- the state model now carries current track and album identity so artwork can stay bound to the exact playing item instead of a text-only album lookup
 - real fetched or proxied album art handling is still pending
 
 ### Capability-Aware Rendering
@@ -117,7 +130,7 @@ Verified locally:
 
 Build and validation pass. The broker stub is available for local end-to-end exercise.
 
-There is not yet an automated unit or integration test suite in the repository. Current verification is local build validation plus manual testing against the local broker stub in Stream Deck, with GitHub Actions also running `npm ci`, `npm run build`, and `npm run validate`.
+Automated smoke coverage exists via `npm run smoke` (build, validate, `tsc --noEmit`, broker stub start if needed, curl-based broker contract checks). Hardware verification still requires manual Stream Deck testing against the local broker stub. GitHub Actions runs `npm ci` and `npm run smoke`.
 
 ## Product Boundary Reminder
 

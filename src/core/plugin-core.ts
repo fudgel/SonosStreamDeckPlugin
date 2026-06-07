@@ -50,10 +50,24 @@ type TargetRuntime = {
 
 type PropertyInspectorGroupsStatus = "idle" | "loading" | "ready" | "error"
 
-type PropertyInspectorMessage =
+export type PropertyInspectorMessage =
   | { type: "request-snapshot" }
   | { type: "refresh-groups"; serviceBaseUrl?: string }
   | { type: "start-auth"; serviceBaseUrl?: string }
+  | {
+      type: "set-target"
+      householdId?: string
+      groupId?: string
+      groupName?: string
+    }
+  | {
+      type: "sync-connection"
+      serviceBaseUrl?: string
+      sessionRef?: string
+      connectionStatus: GlobalSettings["connectionStatus"]
+      connectedAccountLabel?: string
+      lastError?: string
+    }
 
 type PropertyInspectorSnapshot = {
   type: "snapshot"
@@ -85,6 +99,8 @@ export class PluginCore {
 
   #subscriptionRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+  #lastConnectRequestedAt = 0
+
   constructor() {
     this.sonosClient = new HttpSonosClient(
       () => this.stateStore.getSnapshot().globalSettings,
@@ -99,22 +115,26 @@ export class PluginCore {
   initialize(): void {
     streamDeck.settings.useExperimentalMessageIdentifiers = true
     streamDeck.settings.onDidReceiveGlobalSettings((ev) => {
-      this.#applyGlobalSettings(parseGlobalSettings(ev.settings))
+      const persisted = parseGlobalSettings(ev.settings)
+      const current = this.stateStore.getSnapshot().globalSettings
+      const globalSettings = mergeGlobalSettings(current, persisted)
+      streamDeck.logger.info(
+        `Global settings received: connection=${globalSettings.connectionStatus} serviceBaseUrl=${Boolean(globalSettings.serviceBaseUrl)} session=${Boolean(globalSettings.sessionRef)} connectRequestedAt=${globalSettings.connectRequestedAt ?? "none"}`,
+      )
+      this.#applyGlobalSettings(globalSettings)
     })
     streamDeck.ui.onDidAppear(() => {
       void this.#handlePropertyInspectorAppear()
     })
-    streamDeck.ui.onSendToPlugin<PropertyInspectorMessage, SonosActionSettings>(
-      (ev) => {
-        void this.#handlePropertyInspectorMessage(ev.payload)
-      },
-    )
   }
 
   async hydrateSettings(): Promise<void> {
-    this.#applyGlobalSettings(
+    const globalSettings = mergeGlobalSettings(
+      this.stateStore.getSnapshot().globalSettings,
       parseGlobalSettings(await streamDeck.settings.getGlobalSettings()),
     )
+    this.#lastConnectRequestedAt = globalSettings.connectRequestedAt ?? 0
+    this.#applyGlobalSettings(globalSettings)
   }
 
   syncActionTarget(settings: unknown): SonosActionSettings {
@@ -126,10 +146,14 @@ export class PluginCore {
     action: DialAction<SonosActionSettings> | KeyAction<SonosActionSettings>,
     settings: unknown,
   ): void {
+    const target = this.syncActionTarget(settings)
+    streamDeck.logger.info(
+      `Action visible: ${kind} context=${action.id} target=${targetLogValue(target)}`,
+    )
     this.#visibleActions.set(action.id, {
       kind,
       action,
-      target: this.syncActionTarget(settings),
+      target,
     })
 
     this.#syncProgressTimer()
@@ -151,6 +175,9 @@ export class PluginCore {
 
     visibleAction.kind = kind
     visibleAction.target = this.syncActionTarget(settings)
+    streamDeck.logger.info(
+      `Action settings updated: ${kind} context=${action.id} target=${targetLogValue(visibleAction.target)}`,
+    )
     this.#syncProgressTimer()
     void this.#syncTargetRuntimes()
     void this.#renderVisibleAction(action.id)
@@ -166,8 +193,27 @@ export class PluginCore {
     settings: unknown,
     commandName: string,
     command: SonosCommand,
+    actionId?: string,
   ): Promise<SonosCommandResult> {
-    const target = this.syncActionTarget(settings)
+    await this.#synchronizeGlobalSettings()
+
+    let target = this.syncActionTarget(settings)
+    if (!target.groupId || !target.householdId) {
+      const visible = actionId ? this.#visibleActions.get(actionId) : undefined
+      if (visible?.target.groupId && visible.target.householdId) {
+        target = visible.target
+      } else if (actionId) {
+        const fromGlobal =
+          this.stateStore.getSnapshot().globalSettings.actionTargets?.[actionId]
+        if (fromGlobal?.groupId && fromGlobal.householdId) {
+          target = fromGlobal
+        }
+      }
+    }
+    const globalSettings = this.stateStore.getSnapshot().globalSettings
+    streamDeck.logger.info(
+      `Sonos command requested: ${commandName} connection=${globalSettings.connectionStatus} session=${Boolean(globalSettings.sessionRef)} target=${targetLogValue(target)}`,
+    )
     const result = await this.sonosClient.sendCommand({
       target: {
         householdId: target.householdId ?? "",
@@ -195,41 +241,58 @@ export class PluginCore {
   }
 
   async #handlePropertyInspectorAppear(): Promise<void> {
-    await this.#synchronizeGlobalSettings()
     await this.#sendPropertyInspectorSnapshot()
 
-    if (
-      this.stateStore.getSnapshot().globalSettings.connectionStatus === "connected" &&
-      this.#groupsStatus === "idle"
-    ) {
+    if (this.#shouldRefreshGroupsOnInspectorOpen()) {
       void this.refreshAvailableGroups()
     }
   }
 
-  async #handlePropertyInspectorMessage(
+  async handlePropertyInspectorMessage(
     payload: PropertyInspectorMessage,
   ): Promise<void> {
-    if ("serviceBaseUrl" in payload) {
+    streamDeck.logger.info(`PI message received: ${payload.type}`)
+
+    if (payload.type === "sync-connection") {
+      await this.#persistGlobalSettings({
+        ...this.stateStore.getSnapshot().globalSettings,
+        serviceBaseUrl: payload.serviceBaseUrl?.trim() || undefined,
+        sessionRef: payload.sessionRef,
+        connectionStatus: payload.connectionStatus,
+        connectedAccountLabel: payload.connectedAccountLabel,
+        lastError: payload.lastError,
+        connectRequestedAt: undefined,
+      })
+
+      if (payload.connectionStatus === "connected") {
+        await this.refreshAvailableGroups()
+      }
+
+      await this.#sendPropertyInspectorSnapshot()
+      return
+    }
+
+    if (payload.type === "request-snapshot") {
+      await this.#sendPropertyInspectorSnapshot()
+
+      if (this.#shouldRefreshGroupsOnInspectorOpen()) {
+        void this.refreshAvailableGroups()
+      }
+      return
+    }
+
+    const persistedServiceBaseUrl = "serviceBaseUrl" in payload
+
+    if (persistedServiceBaseUrl) {
       await this.#persistGlobalSettings({
         ...this.stateStore.getSnapshot().globalSettings,
         serviceBaseUrl: payload.serviceBaseUrl?.trim() || undefined,
       })
+    } else {
+      await this.#synchronizeGlobalSettings()
     }
 
-    await this.#synchronizeGlobalSettings()
-
     switch (payload.type) {
-      case "request-snapshot":
-        await this.#sendPropertyInspectorSnapshot()
-
-        if (
-          this.stateStore.getSnapshot().globalSettings.connectionStatus ===
-            "connected" &&
-          this.#groupsStatus === "idle"
-        ) {
-          void this.refreshAvailableGroups()
-        }
-        return
       case "refresh-groups":
         await this.refreshAvailableGroups()
         return
@@ -240,12 +303,20 @@ export class PluginCore {
   }
 
   async startAuthorization(): Promise<void> {
-    const globalSettings = await this.#synchronizeGlobalSettings()
+    streamDeck.logger.info("Starting Sonos authorization flow from PI action.")
+    const globalSettings = this.stateStore.getSnapshot().globalSettings
+    streamDeck.logger.info(
+      `Sonos auth context: serviceBaseUrl=${Boolean(globalSettings.serviceBaseUrl)} session=${Boolean(globalSettings.sessionRef)} connection=${globalSettings.connectionStatus}`,
+    )
     const result = await this.sonosClient.startAuthorization()
 
     if (!result.ok) {
+      streamDeck.logger.warn(
+        `Sonos authorization start failed: ${result.code} ${result.message}`,
+      )
       await this.#persistGlobalSettings({
         ...globalSettings,
+        connectRequestedAt: undefined,
         connectionStatus: "error",
         connectedAccountLabel: undefined,
         lastError: result.message,
@@ -255,8 +326,10 @@ export class PluginCore {
     }
 
     this.#setGroupDiscovery([], "idle")
+    streamDeck.logger.info("Sonos authorization start accepted.")
     await this.#persistGlobalSettings({
       ...globalSettings,
+      connectRequestedAt: undefined,
       connectionStatus: "authorizing",
       connectedAccountLabel: undefined,
       lastError: undefined,
@@ -271,6 +344,9 @@ export class PluginCore {
 
   async refreshAvailableGroups(): Promise<void> {
     const globalSettings = await this.#synchronizeGlobalSettings()
+    streamDeck.logger.info(
+      `Refreshing Sonos groups: connection=${globalSettings.connectionStatus} session=${Boolean(globalSettings.sessionRef)} serviceBaseUrl=${Boolean(globalSettings.serviceBaseUrl)}`,
+    )
 
     if (globalSettings.connectionStatus !== "connected") {
       this.#setGroupDiscovery([], "error", "Connect Sonos before loading groups.")
@@ -359,9 +435,11 @@ export class PluginCore {
   }
 
   async #synchronizeGlobalSettings(): Promise<GlobalSettings> {
-    const globalSettings = parseGlobalSettings(
+    const persisted = parseGlobalSettings(
       await streamDeck.settings.getGlobalSettings(),
     )
+    const current = this.stateStore.getSnapshot().globalSettings
+    const globalSettings = mergeGlobalSettings(current, persisted)
 
     this.#applyGlobalSettings(globalSettings)
     return globalSettings
@@ -380,7 +458,20 @@ export class PluginCore {
 
   #applyGlobalSettings(globalSettings: GlobalSettings): void {
     const previousSettings = this.stateStore.getSnapshot().globalSettings
+    const connectRequestedAt = globalSettings.connectRequestedAt ?? 0
+    const shouldStartAuth =
+      connectRequestedAt > 0 && connectRequestedAt > this.#lastConnectRequestedAt
+
     this.stateStore.replaceGlobalSettings(globalSettings)
+    this.#syncVisibleActionTargetsFromGlobalSettings(globalSettings)
+
+    if (shouldStartAuth) {
+      this.#lastConnectRequestedAt = connectRequestedAt
+      streamDeck.logger.info(
+        `Connect requested via global settings at ${connectRequestedAt}`,
+      )
+      void this.startAuthorization()
+    }
 
     const serviceIdentityChanged =
       previousSettings.serviceBaseUrl !== globalSettings.serviceBaseUrl ||
@@ -403,8 +494,21 @@ export class PluginCore {
     }
 
     if (
+      previousSettings.connectionStatus !== "connected" &&
+      globalSettings.connectionStatus === "connected"
+    ) {
+      void this.refreshAvailableGroups()
+    }
+
+    const actionTargetsChanged = !areActionTargetsEqual(
+      previousSettings.actionTargets,
+      globalSettings.actionTargets,
+    )
+
+    if (
       previousSettings.connectionStatus === globalSettings.connectionStatus &&
-      !serviceIdentityChanged
+      !serviceIdentityChanged &&
+      !actionTargetsChanged
     ) {
       return
     }
@@ -413,6 +517,30 @@ export class PluginCore {
     this.#disposeTargetRuntimes()
     this.#syncProgressTimer()
     void this.#syncTargetRuntimes()
+  }
+
+  #syncVisibleActionTargetsFromGlobalSettings(globalSettings: GlobalSettings): void {
+    const actionTargets = globalSettings.actionTargets
+    if (!actionTargets) {
+      return
+    }
+
+    for (const [contextId, visibleAction] of this.#visibleActions) {
+      const savedTarget = actionTargets[contextId]
+      if (!savedTarget) {
+        continue
+      }
+
+      visibleAction.target = parseActionSettings(savedTarget)
+      streamDeck.logger.info(
+        `Action target synced: ${visibleAction.kind} context=${contextId} target=${targetLogValue(visibleAction.target)}`,
+      )
+      void this.#renderVisibleAction(contextId)
+    }
+
+    if (Object.keys(actionTargets).length > 0) {
+      void this.#syncTargetRuntimes()
+    }
   }
 
   async #handleConnectionLoss(message: string): Promise<void> {
@@ -434,6 +562,20 @@ export class PluginCore {
     this.#groupsStatus = status
     this.#groupsError = error
     void this.#sendPropertyInspectorSnapshot()
+  }
+
+  #shouldRefreshGroupsOnInspectorOpen(): boolean {
+    const isConnected =
+      this.stateStore.getSnapshot().globalSettings.connectionStatus === "connected"
+    if (!isConnected) {
+      return false
+    }
+
+    if (this.#groupsStatus === "loading") {
+      return false
+    }
+
+    return this.#groupsStatus !== "ready" || this.#availableGroups.length === 0
   }
 
   async #sendPropertyInspectorSnapshot(): Promise<void> {
@@ -736,7 +878,7 @@ export class PluginCore {
       visibleAction.action.setState(viewState.state?.playbackStatus === "playing" ? 1 : 0),
       visibleAction.action.setTitle(
         !viewState.target
-          ? "Link"
+          ? "No Group"
           : !viewState.isConnected
             ? "Auth"
             : !viewState.state
@@ -761,7 +903,7 @@ export class PluginCore {
       visibleAction.action.setState(viewState.state?.isMuted ? 1 : 0),
       visibleAction.action.setTitle(
         !viewState.target
-          ? "Link"
+          ? "No Group"
           : !viewState.isConnected
             ? "Auth"
             : !viewState.state
@@ -783,7 +925,7 @@ export class PluginCore {
     const viewState = this.#getViewState(visibleAction.target)
 
     await visibleAction.action.setTitle(
-      !viewState.target ? "Link" : !viewState.isConnected ? "Auth" : "Next",
+      !viewState.target ? "No Group" : !viewState.isConnected ? "Auth" : "Next",
     )
   }
 
@@ -797,7 +939,7 @@ export class PluginCore {
     const viewState = this.#getViewState(visibleAction.target)
 
     await visibleAction.action.setTitle(
-      !viewState.target ? "Link" : !viewState.isConnected ? "Auth" : "Prev",
+      !viewState.target ? "No Group" : !viewState.isConnected ? "Auth" : "Prev",
     )
   }
 
@@ -812,7 +954,7 @@ export class PluginCore {
 
     await visibleAction.action.setTitle(
       !viewState.target
-        ? "Link"
+        ? "No Group"
         : !viewState.isConnected
           ? "Auth"
           : !viewState.state
@@ -834,7 +976,7 @@ export class PluginCore {
       visibleAction.action.setImage(albumArtImage(viewState)),
       visibleAction.action.setTitle(
         !viewState.target
-          ? "Link"
+          ? "No Group"
           : !viewState.isConnected
             ? trimLabel(visibleAction.target.groupName ?? "Auth", 8)
             : trimLabel(
@@ -906,6 +1048,15 @@ export class PluginCore {
 
 export const pluginCore = new PluginCore()
 
+export function shouldShowCommandAlert(result: SonosCommandResult): boolean {
+  return (
+    !result.ok &&
+    result.code !== "invalid_target" &&
+    result.code !== "not_configured" &&
+    result.code !== "not_connected"
+  )
+}
+
 function asConfiguredTarget(
   target: SonosActionSettings,
 ): SonosTarget | undefined {
@@ -942,8 +1093,58 @@ function areGlobalSettingsEqual(
     left.serviceBaseUrl === right.serviceBaseUrl &&
     left.sessionRef === right.sessionRef &&
     left.connectedAccountLabel === right.connectedAccountLabel &&
-    left.lastError === right.lastError
+    left.connectRequestedAt === right.connectRequestedAt &&
+    left.lastError === right.lastError &&
+    areActionTargetsEqual(left.actionTargets, right.actionTargets)
   )
+}
+
+function areActionTargetsEqual(
+  left: GlobalSettings["actionTargets"],
+  right: GlobalSettings["actionTargets"],
+): boolean {
+  return JSON.stringify(left ?? {}) === JSON.stringify(right ?? {})
+}
+
+function mergeGlobalSettings(
+  current: GlobalSettings,
+  persisted: GlobalSettings,
+): GlobalSettings {
+  return {
+    connectionStatus: persisted.connectionStatus,
+    serviceBaseUrl: persisted.serviceBaseUrl ?? current.serviceBaseUrl,
+    sessionRef: persisted.sessionRef ?? current.sessionRef,
+    connectedAccountLabel:
+      persisted.connectedAccountLabel ?? current.connectedAccountLabel,
+    connectRequestedAt: persisted.connectRequestedAt ?? current.connectRequestedAt,
+    lastError:
+      persisted.connectionStatus === "error"
+        ? persisted.lastError
+        : (persisted.lastError ?? current.lastError),
+    actionTargets: mergeActionTargetMaps(current.actionTargets, persisted.actionTargets),
+  }
+}
+
+function mergeActionTargetMaps(
+  current: GlobalSettings["actionTargets"],
+  persisted: GlobalSettings["actionTargets"],
+): GlobalSettings["actionTargets"] {
+  if (!current && !persisted) {
+    return undefined
+  }
+
+  return {
+    ...(current ?? {}),
+    ...(persisted ?? {}),
+  }
+}
+
+function targetLogValue(target: SonosActionSettings): string {
+  return JSON.stringify({
+    householdId: target.householdId,
+    groupId: target.groupId,
+    groupName: target.groupName,
+  })
 }
 
 function targetKey(target: SonosTarget): string {

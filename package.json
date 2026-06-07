@@ -8,8 +8,16 @@
     "build": "rollup -c",
     "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.sonosstreamdeck.plugin\"",
     "validate": "streamdeck validate com.sonosstreamdeck.plugin.sdPlugin",
-    "broker:stub": "node scripts/sonos-broker-stub.mjs",
-    "broker:stub:watch": "node --watch scripts/sonos-broker-stub.mjs"
+    "broker": "node scripts/broker-stub.mjs",
+    "broker:start": "node scripts/broker-stub.mjs start",
+    "broker:stop": "node scripts/broker-stub.mjs stop",
+    "broker:restart": "node scripts/broker-stub.mjs restart",
+    "broker:status": "node scripts/broker-stub.mjs status",
+    "broker:stub": "node scripts/broker-stub.mjs start --foreground",
+    "broker:stub:watch": "node scripts/broker-stub.mjs start --foreground --watch",
+    "broker:test": "bash scripts/broker-stub-test.sh",
+    "smoke": "node scripts/smoke.mjs",
+    "test": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@elgato/streamdeck": "^2.1.0"

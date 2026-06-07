@@ -2,17 +2,17 @@ import {
   action,
   type DidReceiveSettingsEvent,
   type DialDownEvent,
-  SingletonAction,
   type TouchTapEvent,
   type WillAppearEvent,
   type WillDisappearEvent,
 } from "@elgato/streamdeck"
 
-import { pluginCore } from "../core/plugin-core"
+import { SonosAction } from "./sonos-action"
+import { pluginCore, shouldShowCommandAlert } from "../core/plugin-core"
 import type { SonosActionSettings } from "../core/settings"
 
 @action({ UUID: "com.sonosstreamdeck.plugin.now-playing-encoder" })
-export class NowPlayingEncoderAction extends SingletonAction<SonosActionSettings> {
+export class NowPlayingEncoderAction extends SonosAction {
   override async onWillAppear(
     ev: WillAppearEvent<SonosActionSettings>,
   ): Promise<void> {
@@ -46,9 +46,10 @@ export class NowPlayingEncoderAction extends SingletonAction<SonosActionSettings
       {
         type: "playback.toggle",
       },
+      ev.action.id,
     )
 
-    if (!result.ok) {
+    if (shouldShowCommandAlert(result)) {
       await ev.action.showAlert()
     }
   }
@@ -60,9 +61,10 @@ export class NowPlayingEncoderAction extends SingletonAction<SonosActionSettings
       {
         type: "playback.toggle",
       },
+      ev.action.id,
     )
 
-    if (!result.ok) {
+    if (shouldShowCommandAlert(result)) {
       await ev.action.showAlert()
     }
   }

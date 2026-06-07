@@ -2,16 +2,16 @@ import {
   action,
   type DidReceiveSettingsEvent,
   type KeyDownEvent,
-  SingletonAction,
   type WillAppearEvent,
   type WillDisappearEvent,
 } from "@elgato/streamdeck"
 
-import { pluginCore } from "../core/plugin-core"
+import { SonosAction } from "./sonos-action"
+import { pluginCore, shouldShowCommandAlert } from "../core/plugin-core"
 import type { SonosActionSettings } from "../core/settings"
 
 @action({ UUID: "com.sonosstreamdeck.plugin.previous-track" })
-export class PreviousTrackAction extends SingletonAction<SonosActionSettings> {
+export class PreviousTrackAction extends SonosAction {
   override async onWillAppear(
     ev: WillAppearEvent<SonosActionSettings>,
   ): Promise<void> {
@@ -45,9 +45,10 @@ export class PreviousTrackAction extends SingletonAction<SonosActionSettings> {
       {
         type: "playback.previous",
       },
+      ev.action.id,
     )
 
-    if (!result.ok) {
+    if (shouldShowCommandAlert(result)) {
       await ev.action.showAlert()
     }
   }

@@ -116,12 +116,17 @@ Playback metadata provides:
 - artist name
 - album or container name
 - image URL
+- item identity for the current track
+- album identity when available
 - service information
 - duration when available
 
 Project implication:
 
 - album art and now-playing display should be driven from playback metadata, not inferred from playback state alone
+- prefer the current item's own image URL first, then the current album image URL if the track image is absent
+- bind cached or proxied artwork to the current item identity rather than only to text labels like album name or artist
+- do not search for album art separately by track title or album name, because that can pick the wrong release when multiple versions exist
 
 ## Progress Timing
 

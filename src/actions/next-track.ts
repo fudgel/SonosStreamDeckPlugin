@@ -2,16 +2,16 @@ import {
   action,
   type DidReceiveSettingsEvent,
   type KeyDownEvent,
-  SingletonAction,
   type WillAppearEvent,
   type WillDisappearEvent,
 } from "@elgato/streamdeck"
 
-import { pluginCore } from "../core/plugin-core"
+import { SonosAction } from "./sonos-action"
+import { pluginCore, shouldShowCommandAlert } from "../core/plugin-core"
 import type { SonosActionSettings } from "../core/settings"
 
 @action({ UUID: "com.sonosstreamdeck.plugin.next-track" })
-export class NextTrackAction extends SingletonAction<SonosActionSettings> {
+export class NextTrackAction extends SonosAction {
   override async onWillAppear(
     ev: WillAppearEvent<SonosActionSettings>,
   ): Promise<void> {
@@ -31,11 +31,16 @@ export class NextTrackAction extends SingletonAction<SonosActionSettings> {
   }
 
   override async onKeyDown(ev: KeyDownEvent<SonosActionSettings>): Promise<void> {
-    const result = await pluginCore.runCommand(ev.payload.settings, "next-track", {
-      type: "playback.next",
-    })
+    const result = await pluginCore.runCommand(
+      ev.payload.settings,
+      "next-track",
+      {
+        type: "playback.next",
+      },
+      ev.action.id,
+    )
 
-    if (!result.ok) {
+    if (shouldShowCommandAlert(result)) {
       await ev.action.showAlert()
     }
   }

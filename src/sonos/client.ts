@@ -8,6 +8,12 @@ export type SonosTarget = {
   groupName?: string
 }
 
+export type SonosServiceObjectId = {
+  objectId: string
+  serviceId?: string
+  accountId?: string
+}
+
 export type SonosCommand =
   | { type: "playback.toggle" }
   | { type: "playback.next" }
@@ -49,6 +55,11 @@ export type SonosGroupState = {
   playbackStatus: "unknown" | "playing" | "paused" | "idle"
   currentTrackTitle?: string
   currentArtistName?: string
+  currentTrackId?: SonosServiceObjectId
+  currentAlbumName?: string
+  currentAlbumId?: SonosServiceObjectId
+  currentTrackImageUrl?: string
+  currentAlbumImageUrl?: string
   positionMillis?: number
   durationMillis?: number
   albumArtUrl?: string
@@ -740,6 +751,11 @@ function asGroupState(value: Record<string, unknown>): SonosGroupState | undefin
     playbackStatus,
     currentTrackTitle: asOptionalString(value.currentTrackTitle),
     currentArtistName: asOptionalString(value.currentArtistName),
+    currentTrackId: asOptionalServiceObjectId(value.currentTrackId),
+    currentAlbumName: asOptionalString(value.currentAlbumName),
+    currentAlbumId: asOptionalServiceObjectId(value.currentAlbumId),
+    currentTrackImageUrl: asOptionalString(value.currentTrackImageUrl),
+    currentAlbumImageUrl: asOptionalString(value.currentAlbumImageUrl),
     positionMillis: asOptionalNumber(value.positionMillis),
     durationMillis: asOptionalNumber(value.durationMillis),
     albumArtUrl: asOptionalString(value.albumArtUrl),
@@ -874,4 +890,24 @@ function asOptionalString(value: unknown): string | undefined {
 
 function asOptionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function asOptionalServiceObjectId(
+  value: unknown,
+): SonosServiceObjectId | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined
+  }
+
+  const objectId = asOptionalString((value as Record<string, unknown>).objectId)
+
+  if (!objectId) {
+    return undefined
+  }
+
+  return {
+    objectId,
+    serviceId: asOptionalString((value as Record<string, unknown>).serviceId),
+    accountId: asOptionalString((value as Record<string, unknown>).accountId),
+  }
 }

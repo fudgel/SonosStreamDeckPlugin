@@ -2,16 +2,16 @@ import {
   action,
   type DidReceiveSettingsEvent,
   type KeyDownEvent,
-  SingletonAction,
   type WillAppearEvent,
   type WillDisappearEvent,
 } from "@elgato/streamdeck"
 
-import { pluginCore } from "../core/plugin-core"
+import { SonosAction } from "./sonos-action"
+import { pluginCore, shouldShowCommandAlert } from "../core/plugin-core"
 import type { SonosActionSettings } from "../core/settings"
 
 @action({ UUID: "com.sonosstreamdeck.plugin.play-pause" })
-export class PlayPauseAction extends SingletonAction<SonosActionSettings> {
+export class PlayPauseAction extends SonosAction {
   override async onWillAppear(
     ev: WillAppearEvent<SonosActionSettings>,
   ): Promise<void> {
@@ -31,11 +31,16 @@ export class PlayPauseAction extends SingletonAction<SonosActionSettings> {
   }
 
   override async onKeyDown(ev: KeyDownEvent<SonosActionSettings>): Promise<void> {
-    const result = await pluginCore.runCommand(ev.payload.settings, "play-pause", {
-      type: "playback.toggle",
-    })
+    const result = await pluginCore.runCommand(
+      ev.payload.settings,
+      "play-pause",
+      {
+        type: "playback.toggle",
+      },
+      ev.action.id,
+    )
 
-    if (!result.ok) {
+    if (shouldShowCommandAlert(result)) {
       await ev.action.showAlert()
     }
   }

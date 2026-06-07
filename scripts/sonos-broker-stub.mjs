@@ -6,6 +6,9 @@ const maxJsonBytes = 16 * 1024
 
 const demoTracks = [
   {
+    trackId: "song:signal-fires",
+    albumId: "album:north-arcade-midnight-signals",
+    albumName: "Midnight Signals",
     title: "Signal Fires",
     artist: "North Arcade",
     durationMillis: 214000,
@@ -17,6 +20,9 @@ const demoTracks = [
     }),
   },
   {
+    trackId: "song:cascade-static",
+    albumId: "album:paper-satellites-signal-loss",
+    albumName: "Signal Loss",
     title: "Cascade Static",
     artist: "Paper Satellites",
     durationMillis: 189000,
@@ -28,6 +34,9 @@ const demoTracks = [
     }),
   },
   {
+    trackId: "song:glass-harbor",
+    albumId: "album:blue-meridian-tidal-memory",
+    albumName: "Tidal Memory",
     title: "Glass Harbor",
     artist: "Blue Meridian",
     durationMillis: 247000,
@@ -71,6 +80,11 @@ class InputError extends Error {
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (req.method === "OPTIONS") {
+      sendOptions(res)
+      return
+    }
+
     if (!req.url) {
       sendJson(res, 400, failure("service_error", "Request URL is missing.", false))
       return
@@ -435,11 +449,26 @@ function buildGroupState(record) {
   syncPlaybackPosition(record)
   const track = demoTracks[record.trackIndex]
   const playModeLabel = playModeLabels[record.playModeIndex]
+  const currentTrackId = {
+    serviceId: "stub-sonos-demo",
+    accountId: "demo-account",
+    objectId: track.trackId,
+  }
+  const currentAlbumId = {
+    serviceId: "stub-sonos-demo",
+    accountId: "demo-account",
+    objectId: track.albumId,
+  }
 
   return {
     playbackStatus: record.playbackStatus,
     currentTrackTitle: track.title,
     currentArtistName: track.artist,
+    currentTrackId,
+    currentAlbumName: track.albumName,
+    currentAlbumId,
+    currentTrackImageUrl: track.artwork,
+    currentAlbumImageUrl: track.artwork,
     positionMillis: Math.round(record.positionMillis),
     durationMillis: track.durationMillis,
     albumArtUrl: track.artwork,
@@ -477,9 +506,23 @@ function writeSseState(client, payload) {
   client.write(`data: ${JSON.stringify(payload)}\n\n`)
 }
 
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "content-type",
+  }
+}
+
+function sendOptions(res) {
+  res.writeHead(204, corsHeaders())
+  res.end()
+}
+
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json",
+    ...corsHeaders(),
   })
   res.end(JSON.stringify(payload))
 }
@@ -487,6 +530,7 @@ function sendJson(res, statusCode, payload) {
 function sendHtml(res, statusCode, html) {
   res.writeHead(statusCode, {
     "Content-Type": "text/html; charset=utf-8",
+    ...corsHeaders(),
   })
   res.end(html)
 }

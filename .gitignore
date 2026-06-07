@@ -4,3 +4,5 @@ dist/
 *.streamDeckPlugin
 com.sonosstreamdeck.plugin.sdPlugin/bin/
 com.sonosstreamdeck.plugin.sdPlugin/logs/
+.broker-stub.pid
+.broker-stub.log

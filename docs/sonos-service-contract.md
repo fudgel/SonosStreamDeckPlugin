@@ -165,9 +165,22 @@ HTTP `202` or other successful `2xx` response:
     "playbackStatus": "playing",
     "currentTrackTitle": "Track Title",
     "currentArtistName": "Artist Name",
+    "currentTrackId": {
+      "serviceId": "204",
+      "objectId": "song:1065681770",
+      "accountId": "aa_000"
+    },
+    "currentAlbumName": "Malibu",
+    "currentAlbumId": {
+      "serviceId": "204",
+      "objectId": "album:1065681000",
+      "accountId": "aa_000"
+    },
+    "currentTrackImageUrl": "http://example.com/current-item-art.jpg",
+    "currentAlbumImageUrl": "http://example.com/current-album-art.jpg",
     "positionMillis": 42000,
     "durationMillis": 189000,
-    "albumArtUrl": "data:image/svg+xml;base64,...",
+    "albumArtUrl": "http://example.com/current-item-art.jpg",
     "isMuted": false,
     "playModeLabel": "Repeat Queue",
     "availableActions": {
@@ -191,6 +204,18 @@ HTTP `202` or other successful `2xx` response:
 ```
 
 ## Event Stream Endpoint
+
+### Artwork Identity Rule
+
+The broker should treat `albumArtUrl` as artwork for the exact current playback item, not as the result of a later text-based album search.
+
+Recommended precedence:
+
+- `currentTrackImageUrl`
+- `currentAlbumImageUrl`
+- service- or plugin-generated fallback imagery
+
+To keep artwork tied to the right release, cache keys and any proxying logic should use `currentTrackId` first and `currentAlbumId` second when available.
 
 ### Current Request
 
@@ -219,7 +244,7 @@ Current client behavior:
 ```text
 event: state
 id: 7
-data: {"target":{"householdId":"house_1","groupId":"group_1"},"revision":7,"state":{"playbackStatus":"playing","currentTrackTitle":"Track Title","currentArtistName":"Artist Name","positionMillis":42000,"durationMillis":189000,"albumArtUrl":"data:image/svg+xml;base64,...","isMuted":false,"playModeLabel":"Repeat Queue","availableActions":{"canSkip":true,"canSkipBack":true,"canPause":true}}}
+data: {"target":{"householdId":"house_1","groupId":"group_1"},"revision":7,"state":{"playbackStatus":"playing","currentTrackTitle":"Track Title","currentArtistName":"Artist Name","currentTrackId":{"serviceId":"204","objectId":"song:1065681770","accountId":"aa_000"},"currentAlbumName":"Malibu","currentAlbumId":{"serviceId":"204","objectId":"album:1065681000","accountId":"aa_000"},"currentTrackImageUrl":"http://example.com/current-item-art.jpg","currentAlbumImageUrl":"http://example.com/current-album-art.jpg","positionMillis":42000,"durationMillis":189000,"albumArtUrl":"http://example.com/current-item-art.jpg","isMuted":false,"playModeLabel":"Repeat Queue","availableActions":{"canSkip":true,"canSkipBack":true,"canPause":true}}}
 
 ```
 

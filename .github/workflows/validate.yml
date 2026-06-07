@@ -19,8 +19,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build plugin
-        run: npm run build
-
-      - name: Validate plugin
-        run: npm run validate
+      - name: Smoke tests
+        run: npm run smoke

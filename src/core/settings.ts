@@ -10,6 +10,8 @@ export type GlobalSettings = {
   sessionRef?: string
   connectedAccountLabel?: string
   lastError?: string
+  connectRequestedAt?: number
+  actionTargets?: Record<string, SonosActionSettings>
 }
 
 export type SonosActionSettings = {
@@ -37,11 +39,32 @@ export function parseGlobalSettings(value: unknown): GlobalSettings {
     serviceBaseUrl: asOptionalString(candidate.serviceBaseUrl),
     sessionRef: asOptionalString(candidate.sessionRef),
     connectedAccountLabel: asOptionalString(candidate.connectedAccountLabel),
+    connectRequestedAt: asOptionalNumber(candidate.connectRequestedAt),
     lastError:
       connectionStatus === "error"
         ? asOptionalString(candidate.lastError)
         : undefined,
+    actionTargets: parseActionTargets(candidate.actionTargets),
   }
+}
+
+function parseActionTargets(
+  value: unknown,
+): Record<string, SonosActionSettings> | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined
+  }
+
+  const entries: Record<string, SonosActionSettings> = {}
+
+  for (const [contextId, settings] of Object.entries(value)) {
+    const parsed = parseActionSettings(settings)
+    if (parsed.householdId && parsed.groupId) {
+      entries[contextId] = parsed
+    }
+  }
+
+  return Object.keys(entries).length > 0 ? entries : undefined
 }
 
 export function parseActionSettings(value: unknown): SonosActionSettings {
@@ -72,3 +95,8 @@ function normalizeConnectionStatus(value: unknown): ConnectionStatus {
 function asOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined
 }
+
+function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+

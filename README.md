@@ -34,14 +34,6 @@ This curated preview uses the real bundled action art to show a more intentional
 
 ![SonosStreamDeck demo layout](./docs/assets/sonosstreamdeck-demo-layout-readme.png)
 
-## Live Stream Deck Captures
-
-These screenshots were captured from the local Stream Deck app while the plugin was linked for development.
-
-![Stream Deck app main window](./docs/assets/stream-deck-app-main-readme.png)
-
-![Stream Deck app secondary window](./docs/assets/stream-deck-app-detail-readme.png)
-
 ## What The Plugin Supports
 
 ### Current Phase-1 Actions
@@ -299,19 +291,21 @@ Use these checklists for the first local hardware test.
 
 ## Verification Model
 
-Current runtime verification is still primarily local and manual:
+Automated smoke checks (build, validate, typecheck, broker stub lifecycle):
 
-- `npm run build`
-- `npm run validate`
-- manual Stream Deck testing against `npm run broker:stub`
+```bash
+npm run smoke
+```
 
-GitHub Actions now also runs:
+`npm test` is an alias for the same command. To run only broker HTTP checks against an already-running stub:
 
-- `npm ci`
-- `npm run build`
-- `npm run validate`
+```bash
+npm run broker:test
+```
 
-There is not yet an automated unit or integration test suite in the repository.
+Hardware verification still requires manual Stream Deck testing against `npm run broker:stub`.
+
+GitHub Actions runs `npm ci` and `npm run smoke` on push and pull request.
 
 ## Supported Test Surface Today
 

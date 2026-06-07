@@ -114,14 +114,21 @@ Each normalized target snapshot currently includes:
 - current position in milliseconds
 - current track title
 - current artist name
+- current track identity (`serviceId` / `objectId` / `accountId` when available)
+- current album name
+- current album identity when available
 - track duration in milliseconds
 - available playback actions like skip and pause
 - broker-supplied `playModeLabel`
 - group mute state
+- current track image URL when available
+- current album image URL when available
 - album art URL
 - received-at timestamp used for local playback progress estimation
 
-Richer metadata normalization, more structured play-mode handling, and any future next-item support are still later-phase work rather than part of the current state shape.
+The broker should treat album art as metadata attached to the exact current item, not as a separate text-based lookup. `albumArtUrl` is the current display field, while track and album identities let the broker or plugin keep artwork tied to the currently playing Sonos item.
+
+Richer metadata normalization and any future next-item support are still later-phase work rather than part of the current state shape.
 
 ## Phase 1 UI Model
 
