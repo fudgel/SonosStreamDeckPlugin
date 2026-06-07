@@ -5,6 +5,13 @@ import streamDeck, {
 } from "@elgato/streamdeck"
 
 import {
+  capabilityKeyTitle,
+  encoderPushDescription,
+  isSkipBackAvailable,
+  isSkipForwardAvailable,
+  playPauseKeyTitle,
+} from "./capability-ui"
+import {
   type GlobalSettings,
   type SonosActionSettings,
   parseActionSettings,
@@ -49,25 +56,6 @@ type TargetRuntime = {
 }
 
 type PropertyInspectorGroupsStatus = "idle" | "loading" | "ready" | "error"
-
-export type PropertyInspectorMessage =
-  | { type: "request-snapshot" }
-  | { type: "refresh-groups"; serviceBaseUrl?: string }
-  | { type: "start-auth"; serviceBaseUrl?: string }
-  | {
-      type: "set-target"
-      householdId?: string
-      groupId?: string
-      groupName?: string
-    }
-  | {
-      type: "sync-connection"
-      serviceBaseUrl?: string
-      sessionRef?: string
-      connectionStatus: GlobalSettings["connectionStatus"]
-      connectedAccountLabel?: string
-      lastError?: string
-    }
 
 type PropertyInspectorSnapshot = {
   type: "snapshot"
@@ -146,7 +134,11 @@ export class PluginCore {
     action: DialAction<SonosActionSettings> | KeyAction<SonosActionSettings>,
     settings: unknown,
   ): void {
-    const target = this.syncActionTarget(settings)
+    const target = resolveEffectiveTarget(
+      this.stateStore.getSnapshot().globalSettings,
+      action.id,
+      this.syncActionTarget(settings),
+    )
     streamDeck.logger.info(
       `Action visible: ${kind} context=${action.id} target=${targetLogValue(target)}`,
     )
@@ -174,7 +166,11 @@ export class PluginCore {
     }
 
     visibleAction.kind = kind
-    visibleAction.target = this.syncActionTarget(settings)
+    visibleAction.target = resolveEffectiveTarget(
+      this.stateStore.getSnapshot().globalSettings,
+      action.id,
+      this.syncActionTarget(settings),
+    )
     streamDeck.logger.info(
       `Action settings updated: ${kind} context=${action.id} target=${targetLogValue(visibleAction.target)}`,
     )
@@ -197,20 +193,20 @@ export class PluginCore {
   ): Promise<SonosCommandResult> {
     await this.#synchronizeGlobalSettings()
 
-    let target = this.syncActionTarget(settings)
+    const globalSettings = this.stateStore.getSnapshot().globalSettings
+    let target = resolveEffectiveTarget(
+      globalSettings,
+      actionId,
+      this.syncActionTarget(settings),
+    )
+
     if (!target.groupId || !target.householdId) {
       const visible = actionId ? this.#visibleActions.get(actionId) : undefined
       if (visible?.target.groupId && visible.target.householdId) {
         target = visible.target
-      } else if (actionId) {
-        const fromGlobal =
-          this.stateStore.getSnapshot().globalSettings.actionTargets?.[actionId]
-        if (fromGlobal?.groupId && fromGlobal.householdId) {
-          target = fromGlobal
-        }
       }
     }
-    const globalSettings = this.stateStore.getSnapshot().globalSettings
+
     streamDeck.logger.info(
       `Sonos command requested: ${commandName} connection=${globalSettings.connectionStatus} session=${Boolean(globalSettings.sessionRef)} target=${targetLogValue(target)}`,
     )
@@ -245,60 +241,6 @@ export class PluginCore {
 
     if (this.#shouldRefreshGroupsOnInspectorOpen()) {
       void this.refreshAvailableGroups()
-    }
-  }
-
-  async handlePropertyInspectorMessage(
-    payload: PropertyInspectorMessage,
-  ): Promise<void> {
-    streamDeck.logger.info(`PI message received: ${payload.type}`)
-
-    if (payload.type === "sync-connection") {
-      await this.#persistGlobalSettings({
-        ...this.stateStore.getSnapshot().globalSettings,
-        serviceBaseUrl: payload.serviceBaseUrl?.trim() || undefined,
-        sessionRef: payload.sessionRef,
-        connectionStatus: payload.connectionStatus,
-        connectedAccountLabel: payload.connectedAccountLabel,
-        lastError: payload.lastError,
-        connectRequestedAt: undefined,
-      })
-
-      if (payload.connectionStatus === "connected") {
-        await this.refreshAvailableGroups()
-      }
-
-      await this.#sendPropertyInspectorSnapshot()
-      return
-    }
-
-    if (payload.type === "request-snapshot") {
-      await this.#sendPropertyInspectorSnapshot()
-
-      if (this.#shouldRefreshGroupsOnInspectorOpen()) {
-        void this.refreshAvailableGroups()
-      }
-      return
-    }
-
-    const persistedServiceBaseUrl = "serviceBaseUrl" in payload
-
-    if (persistedServiceBaseUrl) {
-      await this.#persistGlobalSettings({
-        ...this.stateStore.getSnapshot().globalSettings,
-        serviceBaseUrl: payload.serviceBaseUrl?.trim() || undefined,
-      })
-    } else {
-      await this.#synchronizeGlobalSettings()
-    }
-
-    switch (payload.type) {
-      case "refresh-groups":
-        await this.refreshAvailableGroups()
-        return
-      case "start-auth":
-        await this.startAuthorization()
-        return
     }
   }
 
@@ -504,11 +446,16 @@ export class PluginCore {
       previousSettings.actionTargets,
       globalSettings.actionTargets,
     )
+    const defaultTargetChanged = !areTargetsEqual(
+      previousSettings.defaultTarget,
+      globalSettings.defaultTarget,
+    )
 
     if (
       previousSettings.connectionStatus === globalSettings.connectionStatus &&
       !serviceIdentityChanged &&
-      !actionTargetsChanged
+      !actionTargetsChanged &&
+      !defaultTargetChanged
     ) {
       return
     }
@@ -520,25 +467,28 @@ export class PluginCore {
   }
 
   #syncVisibleActionTargetsFromGlobalSettings(globalSettings: GlobalSettings): void {
-    const actionTargets = globalSettings.actionTargets
-    if (!actionTargets) {
-      return
-    }
-
     for (const [contextId, visibleAction] of this.#visibleActions) {
-      const savedTarget = actionTargets[contextId]
-      if (!savedTarget) {
+      const effectiveTarget = resolveEffectiveTarget(
+        globalSettings,
+        contextId,
+        visibleAction.target,
+      )
+
+      if (!effectiveTarget.householdId || !effectiveTarget.groupId) {
         continue
       }
 
-      visibleAction.target = parseActionSettings(savedTarget)
+      visibleAction.target = effectiveTarget
       streamDeck.logger.info(
         `Action target synced: ${visibleAction.kind} context=${contextId} target=${targetLogValue(visibleAction.target)}`,
       )
       void this.#renderVisibleAction(contextId)
     }
 
-    if (Object.keys(actionTargets).length > 0) {
+    if (
+      globalSettings.defaultTarget?.groupId ||
+      Object.keys(globalSettings.actionTargets ?? {}).length > 0
+    ) {
       void this.#syncTargetRuntimes()
     }
   }
@@ -883,9 +833,10 @@ export class PluginCore {
             ? "Auth"
             : !viewState.state
               ? "Sync"
-              : viewState.state.playbackStatus === "playing"
-                ? "Pause"
-                : "Play",
+              : playPauseKeyTitle(
+                  viewState.state.playbackStatus,
+                  viewState.state,
+                ),
       ),
     ])
   }
@@ -925,7 +876,16 @@ export class PluginCore {
     const viewState = this.#getViewState(visibleAction.target)
 
     await visibleAction.action.setTitle(
-      !viewState.target ? "No Group" : !viewState.isConnected ? "Auth" : "Next",
+      !viewState.target
+        ? "No Group"
+        : !viewState.isConnected
+          ? "Auth"
+          : !viewState.state
+            ? "Next"
+            : capabilityKeyTitle(
+                "Next",
+                isSkipForwardAvailable(viewState.state),
+              ),
     )
   }
 
@@ -939,7 +899,13 @@ export class PluginCore {
     const viewState = this.#getViewState(visibleAction.target)
 
     await visibleAction.action.setTitle(
-      !viewState.target ? "No Group" : !viewState.isConnected ? "Auth" : "Prev",
+      !viewState.target
+        ? "No Group"
+        : !viewState.isConnected
+          ? "Auth"
+          : !viewState.state
+            ? "Prev"
+            : capabilityKeyTitle("Prev", isSkipBackAvailable(viewState.state)),
     )
   }
 
@@ -1018,7 +984,20 @@ export class PluginCore {
     })
     await visibleAction.action.setTriggerDescription(
       viewState.target && viewState.isConnected
-        ? undefined
+        ? encoderPushDescription(viewState.state, viewState.state?.playbackStatus)
+          ? {
+              push: encoderPushDescription(
+                viewState.state,
+                viewState.state?.playbackStatus,
+              ),
+              touch: encoderPushDescription(
+                viewState.state,
+                viewState.state?.playbackStatus,
+              ),
+              rotate: "Reserved",
+              longTouch: "Reserved",
+            }
+          : undefined
         : {
             push: "Connect Sonos",
             touch: "Connect Sonos",
@@ -1095,8 +1074,44 @@ function areGlobalSettingsEqual(
     left.connectedAccountLabel === right.connectedAccountLabel &&
     left.connectRequestedAt === right.connectRequestedAt &&
     left.lastError === right.lastError &&
+    areTargetsEqual(left.defaultTarget, right.defaultTarget) &&
     areActionTargetsEqual(left.actionTargets, right.actionTargets)
   )
+}
+
+function areTargetsEqual(
+  left: SonosActionSettings | undefined,
+  right: SonosActionSettings | undefined,
+): boolean {
+  return (
+    left?.householdId === right?.householdId &&
+    left?.groupId === right?.groupId &&
+    left?.groupName === right?.groupName
+  )
+}
+
+function resolveEffectiveTarget(
+  globalSettings: GlobalSettings,
+  actionId: string | undefined,
+  settings: SonosActionSettings,
+): SonosActionSettings {
+  if (actionId) {
+    const override = globalSettings.actionTargets?.[actionId]
+    if (override?.householdId && override?.groupId) {
+      return override
+    }
+  }
+
+  const defaultTarget = globalSettings.defaultTarget
+  if (defaultTarget?.householdId && defaultTarget?.groupId) {
+    return defaultTarget
+  }
+
+  if (settings.householdId && settings.groupId) {
+    return settings
+  }
+
+  return settings
 }
 
 function areActionTargetsEqual(
@@ -1121,6 +1136,7 @@ function mergeGlobalSettings(
       persisted.connectionStatus === "error"
         ? persisted.lastError
         : (persisted.lastError ?? current.lastError),
+    defaultTarget: persisted.defaultTarget ?? current.defaultTarget,
     actionTargets: mergeActionTargetMaps(current.actionTargets, persisted.actionTargets),
   }
 }
@@ -1214,7 +1230,15 @@ function albumArtImage(viewState: {
   target?: SonosTarget
 }): string {
   if (viewState.state?.albumArtUrl?.startsWith("data:image/")) {
-    return viewState.state.albumArtUrl
+    return streamDeckAlbumArtUrl(viewState.state.albumArtUrl, viewState.state)
+  }
+
+  if (
+    viewState.state?.albumArtUrl &&
+    (viewState.state.albumArtUrl.startsWith("http://") ||
+      viewState.state.albumArtUrl.startsWith("https://"))
+  ) {
+    return streamDeckAlbumArtUrl(viewState.state.albumArtUrl, viewState.state)
   }
 
   const accent =
@@ -1256,6 +1280,80 @@ function albumArtImage(viewState: {
 </svg>`
 
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`
+}
+
+function playbackItemIdentityKey(state?: SonosTargetStateSnapshot): string | undefined {
+  const trackId = state?.currentTrackId
+
+  if (trackId?.objectId) {
+    return `${trackId.serviceId ?? ""}:${trackId.accountId ?? ""}:${trackId.objectId}`
+  }
+
+  if (state?.currentTrackTitle) {
+    return `${state.currentTrackTitle}:${state.currentArtistName ?? ""}`
+  }
+
+  return undefined
+}
+
+function streamDeckAlbumArtUrl(
+  artUrl: string,
+  state?: SonosTargetStateSnapshot,
+): string {
+  const cacheToken = albumArtCacheToken(state)
+
+  if (!cacheToken) {
+    return artUrl
+  }
+
+  const svgBase64Prefix = "data:image/svg+xml;base64,"
+
+  if (artUrl.startsWith(svgBase64Prefix)) {
+    return injectSvgCacheToken(artUrl.slice(svgBase64Prefix.length), cacheToken)
+  }
+
+  if (artUrl.startsWith("http://") || artUrl.startsWith("https://")) {
+    try {
+      const url = new URL(artUrl)
+      url.searchParams.set("sd", cacheToken)
+      return url.toString()
+    } catch {
+      return artUrl
+    }
+  }
+
+  // Fragments break Stream Deck data: URLs; other binary data URLs stay unchanged.
+  return artUrl
+}
+
+function albumArtCacheToken(state?: SonosTargetStateSnapshot): string | undefined {
+  const identity = playbackItemIdentityKey(state)
+
+  if (!identity || state?.receivedAtMillis === undefined) {
+    return undefined
+  }
+
+  return `${identity}:${state.receivedAtMillis}`
+}
+
+function injectSvgCacheToken(base64Payload: string, cacheToken: string): string {
+  const svgBase64Prefix = "data:image/svg+xml;base64,"
+  const comment = `<!-- sd:${cacheToken} -->`
+
+  let svg: string
+
+  try {
+    svg = Buffer.from(base64Payload, "base64").toString("utf8")
+  } catch {
+    return `${svgBase64Prefix}${base64Payload}`
+  }
+
+  const commentPattern = /<!-- sd:[\s\S]*? -->/
+  const nextSvg = commentPattern.test(svg)
+    ? svg.replace(commentPattern, comment)
+    : svg.replace(/(<svg[^>]*>)/, `$1${comment}`)
+
+  return `${svgBase64Prefix}${Buffer.from(nextSvg).toString("base64")}`
 }
 
 function trimLabel(value: string, maxLength: number): string {

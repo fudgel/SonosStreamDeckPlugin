@@ -9,9 +9,7 @@
     globalSettings: {
       connectionStatus: "disconnected",
     },
-    pendingSettings: undefined,
     pendingAuth: undefined,
-    saveTimer: undefined,
     settings: {},
     socket: undefined,
     uuid: "",
@@ -20,12 +18,16 @@
   const refs = {
     authLink: document.getElementById("auth-link"),
     connectButton: document.getElementById("connect-button"),
+    clearOverrideButton: document.getElementById("clear-override-button"),
     connectionCopy: document.getElementById("connection-copy"),
     connectionHint: document.getElementById("connection-hint"),
     connectionPill: document.getElementById("connection-pill"),
+    defaultGroupCopy: document.getElementById("default-group-copy"),
+    defaultGroupSelect: document.getElementById("default-group-select"),
+    defaultTargetHint: document.getElementById("default-target-hint"),
     groupSelect: document.getElementById("group-select"),
     groupsEmpty: document.getElementById("groups-empty"),
-    groupsHint: document.getElementById("groups-hint"),
+    keyTargetHint: document.getElementById("key-target-hint"),
     groupsStatusCopy: document.getElementById("groups-status-copy"),
     heroBadge: document.getElementById("hero-badge"),
     refreshGroupsButton: document.getElementById("refresh-groups-button"),
@@ -51,7 +53,7 @@
       send({ event: registerEvent, uuid })
       requestSettings()
       requestGlobalSettings()
-      sendToPlugin({ type: "request-snapshot" })
+      void refreshGroupsInPI()
     })
 
     state.socket.addEventListener("message", (messageEvent) => {
@@ -65,9 +67,12 @@
           break
         case "didReceiveGlobalSettings":
           state.globalSettings = parseGlobalSettings(message.payload?.settings)
-          const savedTarget = state.globalSettings.actionTargets?.[state.actionContext]
-          if (savedTarget) {
-            confirmSettings(parseTargetSettings(savedTarget))
+          syncTargetStateFromGlobal()
+          if (
+            state.globalSettings.connectionStatus === "connected" &&
+            state.groups.length === 0
+          ) {
+            void refreshGroupsInPI()
           }
           render()
           break
@@ -129,30 +134,138 @@
     })
 
     refs.refreshGroupsButton.addEventListener("click", () => {
-      const serviceBaseUrl = refs.serviceBaseUrlInput.value.trim() || undefined
-      persistServiceBaseUrl(serviceBaseUrl)
-      sendToPlugin({
-        type: "refresh-groups",
-        serviceBaseUrl,
-      })
+      void refreshGroupsInPI()
     })
 
     refs.groupSelect.addEventListener("change", () => {
       const selectedGroup = state.groups.find(
         (group) => groupKey(group) === refs.groupSelect.value,
       )
-      const nextSettings = selectedGroup
-        ? {
-            groupId: selectedGroup.groupId,
-            groupName: selectedGroup.groupName,
-            householdId: selectedGroup.householdId,
-          }
-        : {}
 
-      saveActionSettings(nextSettings)
+      if (!selectedGroup) {
+        clearActionOverride()
+        return
+      }
+
+      saveActionOverride({
+        groupId: selectedGroup.groupId,
+        groupName: selectedGroup.groupName,
+        householdId: selectedGroup.householdId,
+      })
+    })
+
+    refs.defaultGroupSelect.addEventListener("change", () => {
+      const selectedGroup = state.groups.find(
+        (group) => groupKey(group) === refs.defaultGroupSelect.value,
+      )
+
+      saveDefaultTarget(
+        selectedGroup
+          ? {
+              groupId: selectedGroup.groupId,
+              groupName: selectedGroup.groupName,
+              householdId: selectedGroup.householdId,
+            }
+          : {},
+      )
+    })
+
+    refs.clearOverrideButton.addEventListener("click", () => {
+      clearActionOverride()
     })
 
     render()
+  }
+
+  async function refreshGroupsInPI() {
+    const serviceBaseUrl =
+      refs.serviceBaseUrlInput.value.trim() ||
+      state.globalSettings.serviceBaseUrl ||
+      ""
+    const sessionRef = state.globalSettings.sessionRef
+
+    if (
+      state.globalSettings.connectionStatus !== "connected" ||
+      !serviceBaseUrl ||
+      !sessionRef
+    ) {
+      return
+    }
+
+    state.groupsStatus = "loading"
+    state.groupsError = undefined
+    render()
+
+    try {
+      const response = await fetch(
+        `${serviceBaseUrl}/v1/sonos/groups?sessionRef=${encodeURIComponent(sessionRef)}`,
+      )
+      const body = await response.json()
+
+      if (!body.ok) {
+        throw new Error(body.message || "Could not load Sonos groups.")
+      }
+
+      const groups = parseGroupsFromBrokerBody(body)
+
+      if (!groups.length) {
+        throw new Error("Broker returned no Sonos groups.")
+      }
+
+      state.groups = groups
+      state.groupsStatus = "ready"
+      state.groupsError = undefined
+    } catch (error) {
+      state.groupsStatus = "error"
+      state.groupsError =
+        error instanceof Error ? error.message : "Could not load Sonos groups."
+    }
+
+    render()
+  }
+
+  function parseGroupsFromBrokerBody(body) {
+    if (!Array.isArray(body.households)) {
+      return []
+    }
+
+    const groups = []
+
+    for (const household of body.households) {
+      if (!household || typeof household !== "object") {
+        continue
+      }
+
+      const householdId = optionalString(household.householdId)
+      const householdName = optionalString(household.householdName)
+
+      if (!householdId || !Array.isArray(household.groups)) {
+        continue
+      }
+
+      for (const group of household.groups) {
+        if (!group || typeof group !== "object") {
+          continue
+        }
+
+        const groupId = optionalString(group.groupId)
+        const groupName = optionalString(group.groupName)
+
+        if (!groupId || !groupName) {
+          continue
+        }
+
+        groups.push({
+          householdId,
+          householdName,
+          groupId,
+          groupName,
+          label: householdName ? `${groupName} - ${householdName}` : groupName,
+        })
+      }
+    }
+
+    return groups
   }
 
   function handlePluginMessage(payload) {
@@ -167,24 +280,6 @@
           typeof payload.groupsError === "string" ? payload.groupsError : undefined
         state.groupsStatus =
           typeof payload.groupsStatus === "string" ? payload.groupsStatus : "idle"
-        render()
-        break
-      case "target-saved":
-        confirmSettings(parseTargetSettings(payload.settings))
-        state.groupsError = undefined
-        if (state.groups.length > 0) {
-          state.groupsStatus = "ready"
-        }
-        render()
-        break
-      case "target-save-failed":
-        state.pendingSettings = undefined
-        clearTimeout(state.saveTimer)
-        state.groupsStatus = "error"
-        state.groupsError =
-          typeof payload.message === "string"
-            ? payload.message
-            : "Group selection failed."
         render()
         break
       case "open-auth-url":
@@ -235,14 +330,6 @@
       context: state.uuid,
       event: "setGlobalSettings",
       payload: globalSettings,
-    })
-    sendToPlugin({
-      type: "sync-connection",
-      serviceBaseUrl: globalSettings.serviceBaseUrl,
-      sessionRef: globalSettings.sessionRef,
-      connectionStatus: globalSettings.connectionStatus,
-      connectedAccountLabel: globalSettings.connectedAccountLabel,
-      lastError: globalSettings.lastError,
     })
   }
 
@@ -341,7 +428,7 @@
         state.globalSettings = nextGlobalSettings
         render()
         publishGlobalSettings(nextGlobalSettings)
-        sendToPlugin({ type: "refresh-groups", serviceBaseUrl })
+        void refreshGroupsInPI()
         return
       }
 
@@ -353,9 +440,48 @@
     throw new Error("Sonos authorization did not finish in time.")
   }
 
-  function saveActionSettings(nextSettings) {
-    clearTimeout(state.saveTimer)
+  function syncTargetStateFromGlobal() {
+    const override = state.globalSettings.actionTargets?.[state.actionContext]
+    const effective = resolveEffectiveTarget(override, state.globalSettings.defaultTarget)
+    confirmSettings(effective)
+  }
 
+  function resolveEffectiveTarget(override, defaultTarget) {
+    if (override && groupKey(override)) {
+      return parseTargetSettings(override)
+    }
+
+    if (defaultTarget && groupKey(defaultTarget)) {
+      return parseTargetSettings(defaultTarget)
+    }
+
+    return {}
+  }
+
+  function saveDefaultTarget(nextSettings) {
+    const nextGlobalSettings = {
+      ...state.globalSettings,
+      defaultTarget: groupKey(nextSettings) ? nextSettings : undefined,
+    }
+
+    state.globalSettings = nextGlobalSettings
+    syncTargetStateFromGlobal()
+
+    const sent = send({
+      context: state.uuid,
+      event: "setGlobalSettings",
+      payload: nextGlobalSettings,
+    })
+
+    if (!sent) {
+      refs.connectionHint.dataset.tone = "bad"
+      refs.connectionHint.textContent = "Could not save the default Sonos group."
+    }
+
+    render()
+  }
+
+  function saveActionOverride(nextSettings) {
     const actionTargets = {
       ...(state.globalSettings.actionTargets || {}),
       [state.actionContext]: nextSettings,
@@ -367,9 +493,7 @@
     }
 
     state.globalSettings = nextGlobalSettings
-    state.settings = nextSettings
-    state.pendingSettings = undefined
-    state.actionSettingsConfirmed = Boolean(groupKey(nextSettings))
+    syncTargetStateFromGlobal()
     state.groupsError = undefined
 
     const sent = send({
@@ -380,9 +504,30 @@
 
     if (!sent) {
       state.groupsStatus = "error"
-      state.groupsError = "Could not save the Sonos group selection."
+      state.groupsError = "Could not save the group override."
       state.actionSettingsConfirmed = false
     }
+
+    render()
+  }
+
+  function clearActionOverride() {
+    const actionTargets = { ...(state.globalSettings.actionTargets || {}) }
+    delete actionTargets[state.actionContext]
+
+    const nextGlobalSettings = {
+      ...state.globalSettings,
+      actionTargets: Object.keys(actionTargets).length > 0 ? actionTargets : undefined,
+    }
+
+    state.globalSettings = nextGlobalSettings
+    syncTargetStateFromGlobal()
+
+    send({
+      context: state.uuid,
+      event: "setGlobalSettings",
+      payload: nextGlobalSettings,
+    })
 
     render()
   }
@@ -390,22 +535,7 @@
   function confirmSettings(settings) {
     state.settings = settings
     state.actionSettingsConfirmed = Boolean(groupKey(settings))
-
-    if (settingsEqual(settings, state.pendingSettings)) {
-      state.pendingSettings = undefined
-      clearTimeout(state.saveTimer)
-    }
-
     render()
-  }
-
-  function sendToPlugin(payload) {
-    return send({
-      action: state.actionInfo?.action,
-      context: state.actionContext,
-      event: "sendToPlugin",
-      payload,
-    })
   }
 
   function send(message) {
@@ -421,7 +551,11 @@
     const connectionStatus = normalizeConnectionStatus(
       state.globalSettings.connectionStatus,
     )
-    const selectedGroupKey = groupKey(state.settings)
+    const override = state.globalSettings.actionTargets?.[state.actionContext]
+    const overrideKey = override && groupKey(override) ? groupKey(override) : ""
+    const defaultTarget = state.globalSettings.defaultTarget || {}
+    const defaultGroupKey = groupKey(defaultTarget)
+    const effectiveKey = overrideKey || defaultGroupKey || groupKey(state.settings)
     const groupsAreReady = state.groupsStatus === "ready" && state.groups.length > 0
     const inputUrl = refs.serviceBaseUrlInput.value.trim()
     const persistedUrl = state.globalSettings.serviceBaseUrl || ""
@@ -467,30 +601,49 @@
       : "none"
     refs.authLink.textContent = "Open Sonos sign-in page"
 
-    refs.groupsStatusCopy.textContent = state.pendingSettings
-      ? "Saving"
-      : titleCase(state.groupsStatus)
-    refs.groupsHint.dataset.tone =
-      state.groupsStatus === "error"
-        ? "bad"
-        : state.groupsStatus === "loading" || state.pendingSettings
-          ? "warm"
-          : "neutral"
-    refs.groupsHint.textContent =
-      state.pendingSettings
-        ? "Saving this action's Sonos group..."
-        : state.groupsError ||
-          (state.groupsStatus === "loading"
-            ? "Refreshing Sonos households and groups from the plugin..."
-            : "Group choices are discovered by the plugin and stored per action.")
+    refs.groupsStatusCopy.textContent = titleCase(state.groupsStatus)
 
-    renderGroupOptions(selectedGroupKey)
+    const targetWarnings = getTargetWarnings(
+      defaultGroupKey,
+      overrideKey,
+      connectionStatus,
+      groupsAreReady,
+    )
 
-    refs.selectedGroupCopy.textContent = selectedGroupKey
-      ? state.actionSettingsConfirmed
-        ? `This action targets ${selectedGroupName(selectedGroupKey)}.`
-        : `Saving target ${selectedGroupName(selectedGroupKey)}...`
-      : "This action has not been assigned to a Sonos group yet."
+    refs.defaultTargetHint.dataset.tone = targetWarnings.defaultHintTone
+    refs.defaultTargetHint.textContent = targetWarnings.defaultHintText
+
+    refs.keyTargetHint.dataset.tone = targetWarnings.keyHintTone
+    refs.keyTargetHint.textContent = targetWarnings.keyHintText
+
+    refs.clearOverrideButton.hidden = !overrideKey
+
+    renderDefaultGroupOptions(defaultGroupKey)
+    renderGroupOptions(overrideKey)
+
+    if (defaultGroupKey) {
+      refs.defaultGroupCopy.textContent = targetWarnings.defaultStale
+        ? `Saved default: ${savedTargetLabel(defaultTarget)} (stale — select a group again).`
+        : `Default target: ${selectedGroupName(defaultGroupKey)}.`
+    } else {
+      refs.defaultGroupCopy.textContent =
+        connectionStatus === "connected"
+          ? "No default group selected yet — pick one below."
+          : "Connect Sonos, then choose a default group for all actions."
+    }
+
+    if (effectiveKey) {
+      refs.selectedGroupCopy.textContent = overrideKey
+        ? targetWarnings.overrideStale
+          ? `Override stale — ${savedTargetLabel(override)} was not found in discovery.`
+          : `This key overrides the default and targets ${selectedGroupName(overrideKey)}.`
+        : `This key uses the default group (${selectedGroupName(effectiveKey)}).`
+    } else if (connectionStatus === "connected" && groupsAreReady) {
+      refs.selectedGroupCopy.textContent =
+        "No default group selected. Stream Deck keys may alert until you pick one above."
+    } else {
+      refs.selectedGroupCopy.textContent = "Connect Sonos and choose a default group."
+    }
     refs.groupsEmpty.hidden = state.groups.length > 0 || groupsAreReady
     refs.groupsEmpty.textContent =
       state.groupsStatus === "loading"
@@ -500,7 +653,7 @@
           : "No groups loaded yet."
   }
 
-  function renderGroupOptions(selectedGroupKey) {
+  function renderDefaultGroupOptions(selectedGroupKey) {
     const options = []
 
     if (!state.groups.length) {
@@ -508,28 +661,158 @@
         new Option(
           state.groupsStatus === "loading"
             ? "Loading Sonos groups..."
-            : "Choose a Sonos group",
+            : "Choose a default group",
           "",
         ),
       )
     } else {
-      options.push(new Option("Choose a Sonos group", ""))
+      options.push(new Option("Choose a default group", ""))
 
       for (const group of state.groups) {
         options.push(new Option(group.label, groupKey(group)))
       }
+
+      appendStaleGroupOption(options, selectedGroupKey, state.globalSettings.defaultTarget)
+    }
+
+    refs.defaultGroupSelect.replaceChildren(...options)
+    refs.defaultGroupSelect.disabled =
+      state.globalSettings.connectionStatus !== "connected" ||
+      state.groupsStatus === "loading"
+    refs.defaultGroupSelect.value = selectedGroupKey || ""
+  }
+
+  function renderGroupOptions(overrideGroupKey) {
+    const options = []
+
+    if (!state.groups.length) {
+      options.push(
+        new Option(
+          state.groupsStatus === "loading"
+            ? "Loading Sonos groups..."
+            : "Use default group",
+          "",
+        ),
+      )
+    } else {
+      options.push(new Option("Use default group", ""))
+
+      for (const group of state.groups) {
+        options.push(new Option(group.label, groupKey(group)))
+      }
+
+      const override = state.globalSettings.actionTargets?.[state.actionContext]
+      appendStaleGroupOption(options, overrideGroupKey, override)
     }
 
     refs.groupSelect.replaceChildren(...options)
     refs.groupSelect.disabled =
       state.globalSettings.connectionStatus !== "connected" ||
       state.groupsStatus === "loading"
-    refs.groupSelect.value = selectedGroupKey || ""
+    refs.groupSelect.value = overrideGroupKey || ""
   }
 
   function selectedGroupName(selectedGroupKey) {
     const group = state.groups.find((entry) => groupKey(entry) === selectedGroupKey)
-    return group ? group.label : state.settings.groupName || "the selected Sonos group"
+    if (group) {
+      return group.label
+    }
+
+    const override = state.globalSettings.actionTargets?.[state.actionContext]
+    if (override && groupKey(override) === selectedGroupKey) {
+      return savedTargetLabel(override)
+    }
+
+    const defaultTarget = state.globalSettings.defaultTarget
+    if (defaultTarget && groupKey(defaultTarget) === selectedGroupKey) {
+      return savedTargetLabel(defaultTarget)
+    }
+
+    return state.settings.groupName || "the selected Sonos group"
+  }
+
+  function isKnownGroupKey(selectedGroupKey) {
+    if (!selectedGroupKey) {
+      return false
+    }
+
+    return state.groups.some((entry) => groupKey(entry) === selectedGroupKey)
+  }
+
+  function savedTargetLabel(target) {
+    if (!target) {
+      return "Saved group"
+    }
+
+    return target.groupName || `${target.householdId}:${target.groupId}`
+  }
+
+  function appendStaleGroupOption(options, selectedGroupKey, savedTarget) {
+    if (!selectedGroupKey || isKnownGroupKey(selectedGroupKey) || !savedTarget) {
+      return
+    }
+
+    options.push(
+      new Option(
+        `${savedTargetLabel(savedTarget)} (stale — re-select)`,
+        selectedGroupKey,
+      ),
+    )
+  }
+
+  function getTargetWarnings(defaultGroupKey, overrideKey, connectionStatus, groupsAreReady) {
+    const defaultStale =
+      Boolean(defaultGroupKey) && groupsAreReady && !isKnownGroupKey(defaultGroupKey)
+    const overrideStale =
+      Boolean(overrideKey) && groupsAreReady && !isKnownGroupKey(overrideKey)
+    const missingDefault =
+      connectionStatus === "connected" && groupsAreReady && !defaultGroupKey
+
+    let defaultHintTone = "neutral"
+    let defaultHintText =
+      "Select a default group once — every action uses it unless a key overrides below."
+
+    if (state.groupsError) {
+      defaultHintTone = "bad"
+      defaultHintText = state.groupsError
+    } else if (state.groupsStatus === "loading") {
+      defaultHintTone = "warm"
+      defaultHintText = "Refreshing Sonos groups from the broker..."
+    } else if (defaultStale) {
+      defaultHintTone = "bad"
+      defaultHintText =
+        "Saved default group was not found in the latest discovery. Select a group again."
+    } else if (missingDefault) {
+      defaultHintTone = "warm"
+      defaultHintText =
+        "No default group selected yet. Stream Deck keys may alert on first press until you pick one."
+    } else if (defaultGroupKey) {
+      defaultHintText = "Default group saved. Keys use it automatically."
+    }
+
+    let keyHintTone = "neutral"
+    let keyHintText = "Leave override empty to use the default group for all actions."
+
+    if (overrideStale) {
+      keyHintTone = "bad"
+      keyHintText =
+        "This key's override is stale and missing from discovery. Re-select a group or clear the override."
+    } else if (overrideKey) {
+      keyHintText = "This key uses its own group instead of the default."
+    } else if (missingDefault) {
+      keyHintTone = "warm"
+      keyHintText = "No default group yet — select one above before pressing keys."
+    }
+
+    return {
+      defaultStale,
+      overrideStale,
+      missingDefault,
+      defaultHintTone,
+      defaultHintText,
+      keyHintTone,
+      keyHintText,
+    }
   }
 
   function groupKey(group) {
@@ -549,6 +832,9 @@
       connectRequestedAt:
         typeof value.connectRequestedAt === "number" ? value.connectRequestedAt : undefined,
       connectionStatus: normalizeConnectionStatus(value.connectionStatus),
+      defaultTarget: groupKey(parseTargetSettings(value.defaultTarget))
+        ? parseTargetSettings(value.defaultTarget)
+        : undefined,
       lastError: optionalString(value.lastError),
       serviceBaseUrl: optionalString(value.serviceBaseUrl),
       sessionRef: optionalString(value.sessionRef),
@@ -582,16 +868,6 @@
       groupName: optionalString(value.groupName),
       householdId: optionalString(value.householdId),
     }
-  }
-
-  function settingsEqual(left, right) {
-    return (
-      (!left && !right) ||
-      Boolean(left && right &&
-        left.groupId === right.groupId &&
-        left.groupName === right.groupName &&
-        left.householdId === right.householdId)
-    )
   }
 
   function optionalString(value) {

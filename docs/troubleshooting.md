@@ -10,8 +10,8 @@ Today the repository is expected to work like this:
 
 - `npm run broker:stub` runs the local Sonos broker stub at `http://127.0.0.1:47831`
 - the plugin is built locally and linked into Stream Deck
-- the property inspector stores `serviceBaseUrl` and per-action group settings
-- `PluginCore` performs auth, connection polling, group discovery, state bootstrap, and SSE subscription work
+- the property inspector stores `serviceBaseUrl`, a **default Sonos group**, and optional per-key overrides via `setGlobalSettings`
+- `PluginCore` reacts to global settings changes, bootstraps state, and opens SSE subscriptions
 - live updates arrive over SSE, not webhooks
 
 If a troubleshooting step assumes real Sonos OAuth infrastructure or a production broker, call that out explicitly.
@@ -50,7 +50,9 @@ Initial checks:
 - confirm `npm run broker:stub` is still running
 - confirm the property inspector base URL is `http://127.0.0.1:47831`
 - click `Connect Sonos` again and complete the opened stub auth page
-- confirm the property inspector eventually shows `Connected`
+- confirm the property inspector shows `Connected`
+- choose a **Default Sonos Group** in the Connection section (required for keys to work)
+- use per-key override only when that key should target a different room
 - inspect Stream Deck logs for `com.sonosstreamdeck.plugin` restart activity and connection failures
 - if connect or group assignment fails in Stream Deck, see [worklog/2026-06-07-stream-deck-connect-investigation.md](./worklog/2026-06-07-stream-deck-connect-investigation.md) (resolution + PI Web Inspector notes)
 
@@ -80,10 +82,27 @@ Possible causes:
 
 Initial checks:
 
-- verify the action has a selected Sonos group in the property inspector
+- verify the property inspector shows `Connected`
+- confirm a **Default Sonos Group** is selected
+- use `Refresh Groups` after auth completes
+- if the PI shows a stale group warning, re-select the default or clear a stale per-key override
+- reconnect Sonos if the inspector shows a stale error
+- confirm the broker stub still responds at `http://127.0.0.1:47831/health`
+
+### Stream Deck action presses do nothing
+
+Possible causes:
+
+- plugin is not connected to the broker
+- **no default Sonos group** is selected
+- selected group is missing or stale
+- the broker command failed and the action showed an alert
+
+Initial checks:
+
+- verify the property inspector has a **Default Sonos Group** selected (or a valid per-key override)
 - verify the property inspector still shows `Connected`
-- verify the latest target state was received by checking that titles or album art updated
-- watch for alert triangles on the hardware after a failed command
+- watch for alert triangles on the hardware after a failed command (`invalid_target` usually means no default group)
 
 ### Album art does not render
 
@@ -146,3 +165,27 @@ Other installed plugins also keep per-plugin log files under `~/Library/Applicat
 - use `npm run watch` during plugin iteration so rebuilds trigger plugin restarts automatically
 - keep `npm run broker:stub` running in a separate terminal and watch its request logs while testing
 - when a change does not show up, restart the plugin with `npx streamdeck restart com.sonosstreamdeck.plugin`
+
+### Property Inspector Web Inspector (macOS)
+
+Use this when PI connect, group dropdowns, or save behavior needs debugging.
+
+1. Enable remote debugging for Stream Deck (once per machine):
+
+```bash
+defaults write com.elgato.StreamDeck html_remote_debugging_enabled -bool YES
+```
+
+Restart the Stream Deck app after changing this setting.
+
+2. Open the Sonos action property inspector in Stream Deck (select a key with a Sonos action).
+
+3. In Chrome, go to [http://localhost:23654/](http://localhost:23654/) and open the PI page for your action.
+
+4. Use the Console and Network tabs to inspect PI `fetch` calls to the broker and `setGlobalSettings` payloads.
+
+Plugin logs (separate from PI):
+
+```text
+~/Library/Application Support/com.elgato.StreamDeck/Plugins/com.sonosstreamdeck.plugin.sdPlugin/logs/com.sonosstreamdeck.plugin.0.log
+```

@@ -6,7 +6,24 @@ This document captures the current state of the `SonosStreamDeck` implementation
 
 ## Current State
 
-The plugin is now fully wired against the internal broker stub for Sonos auth, group discovery, command writes, state bootstrap, SSE live updates, and Stream Deck rendering.
+**Stub milestone complete (2026-06-07).** The plugin is fully wired against the internal broker stub for Sonos auth, group discovery, command writes, state bootstrap, SSE live updates, capability-aware rendering, album art, and Stream Deck hardware feedback.
+
+Ralph loops 01–07 are complete. Automated gate: `bash ralph/verify/run-all.sh`.
+
+## Stub Milestone Checklist
+
+| Area | Status |
+|------|--------|
+| Connect + default group | PI `fetch` + `setGlobalSettings`; optional per-key override |
+| SSE / live state | Fetch-based SSE (`src/sonos/sse-stream.ts`); no `EventSource` |
+| Action coverage | All five broker commands + encoder; hardware checklist signed off |
+| PI cleanup | No PI `sendToPlugin` / `setSettings`; groups via PI `fetch` |
+| PI polish | Stale/missing default warnings, clear override, DevTools docs |
+| Capability UI | Skip/pause `Off` / `Locked` titles; encoder push descriptions |
+| Album art | Broker art by item identity; SVG fallback; cache-bust on track revisit |
+| Verification | `npm run smoke` + `ralph/verify/run-all.sh` |
+
+See [worklog/2026-06-07-stream-deck-connect-investigation.md](./worklog/2026-06-07-stream-deck-connect-investigation.md) for the connect investigation arc.
 
 ## What Is Already Implemented
 
@@ -38,7 +55,7 @@ The plugin is now fully wired against the internal broker stub for Sonos auth, g
 
 ### Sonos Client And Runtime Boundary
 
-The plugin now routes auth, discovery, commands, state bootstrap, and SSE subscriptions through a real service-facing seam rather than placeholder logging or one-off action-local state.
+The plugin routes auth, discovery, commands, state bootstrap, and SSE subscriptions through a real service-facing seam.
 
 Implemented client surface:
 
@@ -60,64 +77,38 @@ Implemented command mapping:
 
 ### Live State And Rendering
 
-- `SonosStateStore` now tracks multiple Sonos groups simultaneously using target keys
-- `PluginCore` tracks visible actions and shares one fetch/subscription runtime per active configured group
-- `fetchState(...)` bootstraps each active target before subscribing
-- `subscribe(...)` now listens to broker SSE updates and retries retryable disconnects
-- local playback progress estimation runs on a 1 Hz timer for album-art keys and the now-playing encoder
-- real playback metadata now drives key titles, dial feedback, progress, and dynamic SVG album art
-- target state now carries current track and album identity alongside artwork URLs so future real-art fetching can stay bound to the exact Sonos item being played
+- `SonosStateStore` tracks multiple Sonos groups using target keys
+- `PluginCore` shares one fetch/subscription runtime per active configured group
+- `fetchState(...)` bootstraps each target before subscribing
+- `subscribe(...)` uses broker SSE with retryable disconnect handling
+- local playback progress estimation runs at 1 Hz for album-art keys and the now-playing encoder
+- playback metadata drives key titles, dial feedback, progress, and album art
+- target state carries track/album identity alongside artwork URLs
 
 ### Property Inspector Behavior
 
-- the property inspector now follows a thin-client model and persists settings directly through Stream Deck
-- Sonos auth and group discovery are delegated to the plugin over PI messaging
-- auth and group refresh messages carry `serviceBaseUrl` explicitly to avoid persistence races
-- discovered Sonos groups can be assigned per action
+- PI owns broker auth and group discovery via `fetch` to `/v1/sonos/*`
+- connection metadata, `defaultTarget`, and optional per-key `actionTargets` persist through `setGlobalSettings`
+- the plugin syncs targets on `didReceiveGlobalSettings`; PI does not use `sendToPlugin` or per-action `setSettings`
 
-### Sonos Service Layer
+### Sonos Service Layer (Stub)
 
-- internal broker stub exists as `scripts/sonos-broker-stub.mjs`
-- `/health` exists in the broker stub
-- `/v1/sonos/commands` exists in the broker stub
-- `/v1/sonos/state` exists in the broker stub
-- `/v1/sonos/events` exists in the broker stub as SSE
-- `/v1/sonos/auth/start` exists in the broker stub
-- `/v1/sonos/connection` exists in the broker stub
-- `/v1/sonos/groups` exists in the broker stub
-- broker state is currently in-memory demo state only, including mock households, mock tracks, and generated artwork data URIs
+- internal broker stub: `scripts/sonos-broker-stub.mjs`
+- endpoints: `/health`, `/v1/sonos/auth/start`, `/v1/sonos/connection`, `/v1/sonos/groups`, `/v1/sonos/commands`, `/v1/sonos/state`, `/v1/sonos/events`
+- in-memory demo households, tracks, generated SVG artwork data URIs
+- Sonos-like previous-track behavior (restart past 3s, skip back at start)
 
-## Current Gaps And In-Progress Areas
-
-### Stream Deck stub E2E (resolved 2026-06-07)
-
-Connect, group assignment, and play/pause commands work against the local broker stub via PI `fetch` + **`setGlobalSettings`** (including `actionTargets[context]`). PI `sendToPlugin` / `setSettings` were not observed reaching the plugin on Stream Deck 7.x in this install.
-
-See [worklog/2026-06-07-stream-deck-connect-investigation.md](./worklog/2026-06-07-stream-deck-connect-investigation.md) for the full investigation arc, resolution, and follow-ups (SSE subscription, dead PI paths).
-
-### SSE / live state (in progress)
-
-- commands succeed after group assignment
-- state subscription may warn `service_unreachable` on stub SSE path; encoder/album art feedback still needs verification
+## Out Of Scope For Stub Milestone (Next Phase)
 
 ### Production Broker Integration
 
-- auth and group discovery are still stub-backed, not real Sonos production flows
-- the broker stub does not persist state or exercise real Sonos OAuth/token refresh behavior
+- replace stub auth and group discovery with real Sonos OAuth/token refresh
+- persist broker state; exercise real Sonos API semantics
 
-### Album Art
+### Album Art (Production)
 
-- current album art is either broker-provided data URIs or plugin-generated SVG fallback art
-- the state model now carries current track and album identity so artwork can stay bound to the exact playing item instead of a text-only album lookup
-- real fetched or proxied album art handling is still pending
-
-### Capability-Aware Rendering
-
-- skip and pause capability flags are parsed but not yet reflected in button enablement or alternate visuals
-
-### Property Inspector Polish
-
-- stale or missing group selections still need tighter validation and clearer recovery UX
+- fetch or proxy real HTTP(S) artwork from Sonos metadata (stub uses data URIs today)
+- disk cache policy TBD
 
 ## Build And Verification Status
 
@@ -126,11 +117,12 @@ Verified locally:
 - `npm install`
 - `npm run build`
 - `npm run validate`
-- `npm run broker:stub`
+- `npm run smoke`
+- `bash ralph/verify/run-all.sh`
 
-Build and validation pass. The broker stub is available for local end-to-end exercise.
+GitHub Actions runs `npm ci` and `npm run smoke`.
 
-Automated smoke coverage exists via `npm run smoke` (build, validate, `tsc --noEmit`, broker stub start if needed, curl-based broker contract checks). Hardware verification still requires manual Stream Deck testing against the local broker stub. GitHub Actions runs `npm ci` and `npm run smoke`.
+Hardware verification uses the local broker stub: connect in PI, set default group, exercise keys and encoder. See `ralph/loops/02-action-coverage/HARDWARE_CHECKLIST.md`.
 
 ## Product Boundary Reminder
 
@@ -144,5 +136,4 @@ The product is the installable Stream Deck plugin.
 
 1. replace stub auth and group discovery with the real broker-backed Sonos flow
 2. upgrade album-art handling from stub data URIs to real fetched or proxied artwork
-3. add richer capability-aware rendering for skip and pause availability
-4. tighten property inspector polish and validation around empty or stale targets
+3. extend capability-aware rendering (images/disabled states beyond title text)

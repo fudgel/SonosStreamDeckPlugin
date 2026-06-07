@@ -101,7 +101,9 @@ sequenceDiagram
     participant Deck as Stream Deck Action
 
     User->>PI: Set broker URL and start auth
-    PI->>Plugin: sendToPlugin(start-auth, serviceBaseUrl)
+    PI->>SD: setGlobalSettings (connection, defaultTarget, actionTargets)
+    SD->>Plugin: didReceiveGlobalSettings
+    Plugin->>Broker: commands / state / SSE
     Plugin->>Broker: POST /v1/sonos/auth/start
     Broker-->>Plugin: authorizeUrl, sessionRef
     Plugin-->>PI: open-auth-url

@@ -272,6 +272,104 @@ EOF
     )"
     echo "      accepted=${accepted:-unknown}"
   fi
+
+  next_body="$(
+    curl_json POST "${BASE_URL}/v1/sonos/commands" "$(cat <<EOF
+{
+  "sessionRef": "${SESSION_REF}",
+  "target": {
+    "householdId": "${HOUSEHOLD_ID}",
+    "groupId": "${GROUP_ID}"
+  },
+  "command": {
+    "type": "playback.next"
+  }
+}
+EOF
+)"
+  )"
+
+  if assert_json_ok "POST /v1/sonos/commands (playback.next)" "$next_body"; then
+    sleep 4
+
+    state_after_next="$(
+      curl_json GET \
+        "${BASE_URL}/v1/sonos/state?sessionRef=${SESSION_REF}&householdId=${HOUSEHOLD_ID}&groupId=${GROUP_ID}"
+    )"
+    track_before_previous="$(
+      printf '%s' "$state_after_next" | json_field "data.state.currentTrackTitle" 2>/dev/null || true
+    )"
+
+    restart_body="$(
+      curl_json POST "${BASE_URL}/v1/sonos/commands" "$(cat <<EOF
+{
+  "sessionRef": "${SESSION_REF}",
+  "target": {
+    "householdId": "${HOUSEHOLD_ID}",
+    "groupId": "${GROUP_ID}"
+  },
+  "command": {
+    "type": "playback.previous"
+  }
+}
+EOF
+)"
+    )"
+
+    if assert_json_ok "POST /v1/sonos/commands (playback.previous restart)" "$restart_body"; then
+      state_after_restart="$(
+        curl_json GET \
+          "${BASE_URL}/v1/sonos/state?sessionRef=${SESSION_REF}&householdId=${HOUSEHOLD_ID}&groupId=${GROUP_ID}"
+      )"
+      track_after_restart="$(
+        printf '%s' "$state_after_restart" | json_field "data.state.currentTrackTitle" 2>/dev/null || true
+      )"
+      position_after_restart="$(
+        printf '%s' "$state_after_restart" | json_field "data.state.positionMillis" 2>/dev/null || true
+      )"
+
+      if [[ "$track_after_restart" == "$track_before_previous" && "${position_after_restart:-999}" -le 1000 ]]; then
+        pass "playback.previous restarts current track when past threshold"
+      else
+        fail "playback.previous restarts current track when past threshold" \
+          "expected same track (${track_before_previous}) near start, got ${track_after_restart} @ ${position_after_restart}ms"
+      fi
+    fi
+
+    skip_back_body="$(
+      curl_json POST "${BASE_URL}/v1/sonos/commands" "$(cat <<EOF
+{
+  "sessionRef": "${SESSION_REF}",
+  "target": {
+    "householdId": "${HOUSEHOLD_ID}",
+    "groupId": "${GROUP_ID}"
+  },
+  "command": {
+    "type": "playback.previous"
+  }
+}
+EOF
+)"
+    )"
+
+    if assert_json_ok "POST /v1/sonos/commands (playback.previous skip back)" "$skip_back_body"; then
+      state_after_skip_back="$(
+        curl_json GET \
+          "${BASE_URL}/v1/sonos/state?sessionRef=${SESSION_REF}&householdId=${HOUSEHOLD_ID}&groupId=${GROUP_ID}"
+      )"
+      track_after_skip_back="$(
+        printf '%s' "$state_after_skip_back" | json_field "data.state.currentTrackTitle" 2>/dev/null || true
+      )"
+
+      if [[ "$track_after_skip_back" != "$track_before_previous" ]]; then
+        pass "playback.previous skips back when at track start"
+        echo "      ${track_before_previous} -> ${track_after_skip_back}"
+      else
+        fail "playback.previous skips back when at track start" \
+          "expected different track after second previous, still on ${track_after_skip_back}"
+      fi
+    fi
+  fi
 fi
 
 echo

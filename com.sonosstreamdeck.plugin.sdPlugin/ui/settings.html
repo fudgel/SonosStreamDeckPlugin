@@ -308,15 +308,29 @@
           >Continue Sonos sign-in</a
         >
 
+        <label>
+          <span>Default Sonos Group</span>
+          <select id="default-group-select" disabled>
+            <option value="">Connect Sonos to load groups</option>
+          </select>
+        </label>
+
+        <p class="meta" id="default-group-copy">
+          Choose one group for all actions. Individual keys can override below.
+        </p>
+
+        <div class="hint" id="default-target-hint" data-tone="neutral">
+          Keys need a default group before commands succeed.
+        </div>
       </section>
 
       <section class="panel hero">
         <div class="eyebrow">SonosStreamDeck</div>
         <div class="hero-copy">
-          <h1>Connect once, target each key precisely.</h1>
+          <h1>Connect once, pick one group.</h1>
           <p>
-            Global settings keep the broker connection metadata. Each action stores
-            only its selected Sonos group.
+            The default Sonos group applies to every action. Override a single key
+            only when you need a different room.
           </p>
         </div>
         <div class="hero-badge" id="hero-badge">Waiting for broker connection</div>
@@ -324,23 +338,27 @@
 
       <section class="panel stack">
         <div class="status-row">
-          <h2>Action Target</h2>
+          <h2>This Key (optional)</h2>
           <div class="meta" id="groups-status-copy">Idle</div>
         </div>
 
         <label>
-          <span>Sonos Group</span>
+          <span>Override group for this key</span>
           <select id="group-select" disabled>
-            <option value="">Connect Sonos to load groups</option>
+            <option value="">Use default group</option>
           </select>
         </label>
 
         <p class="meta" id="selected-group-copy">
-          This action has not been assigned to a Sonos group yet.
+          This action uses the default Sonos group.
         </p>
 
-        <div class="hint" id="groups-hint">
-          Group choices are discovered live from the broker and stored per action.
+        <button id="clear-override-button" type="button" hidden>
+          Clear override (use default group)
+        </button>
+
+        <div class="hint" id="key-target-hint" data-tone="neutral">
+          Leave override empty to use the default group for all actions.
         </div>
 
         <div class="empty" id="groups-empty">

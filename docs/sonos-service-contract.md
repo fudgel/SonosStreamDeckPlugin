@@ -235,7 +235,7 @@ The current broker stub uses SSE.
 
 Current client behavior:
 
-- `subscribe(...)` performs an HTTP probe before creating `EventSource`
+- `subscribe(...)` opens a long-lived `fetch` stream and parses SSE frames (no `EventSource` dependency)
 - this allows `401`, `404`, and other structured failures to surface as typed errors instead of opaque SSE disconnects
 - retryable stream disconnects are handled by the plugin runtime, not by individual action instances
 

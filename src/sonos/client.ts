@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import type { ConnectionStatus, GlobalSettings } from "../core/settings"
+import { pumpSseStream } from "./sse-stream"
 
 export type SonosTarget = {
   householdId: string
@@ -424,71 +425,78 @@ export class HttpSonosClient implements SonosClient {
 
     applyStateSearchParams(requestUrl, requestContext.sessionRef, target)
 
+    const controller = new AbortController()
+
     try {
-      const probeResponse = await fetch(requestUrl, {
+      const response = await fetch(requestUrl.toString(), {
         headers: {
           accept: "text/event-stream",
         },
-        signal: AbortSignal.timeout(4000),
+        signal: controller.signal,
       })
 
-      const probeBody = await safeJson(probeResponse)
-
-      if (!probeResponse.ok) {
-        return asFailureResult(probeBody, probeResponse.status)
+      if (!response.ok) {
+        const body = await safeJson(response)
+        return asFailureResult(body, response.status)
       }
 
-      void probeResponse.body?.cancel()
-    } catch (error) {
-      return asNetworkFailureResult(error)
-    }
+      if (!response.body) {
+        return {
+          ok: false,
+          code: "service_unreachable",
+          message: "Sonos event stream is unreachable.",
+          retryable: true,
+        }
+      }
 
-    let source: EventSource
+      const handleSseData = (data: string) => {
+        const body = parseJsonRecord(data)
+        const state = asStateEnvelope(body)
 
-    try {
-      source = new EventSource(requestUrl)
-    } catch {
+        if (state) {
+          onEvent(state)
+        }
+      }
+
+      void pumpSseStream(response.body, controller.signal, (eventName, data) => {
+        if (!eventName || eventName === "message" || eventName === "state") {
+          handleSseData(data)
+        }
+      }).catch((error) => {
+        if (controller.signal.aborted) {
+          return
+        }
+
+        onError?.({
+          ok: false,
+          code: "service_unreachable",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Sonos event stream disconnected.",
+          retryable: true,
+        })
+      })
+
       return {
-        ok: false,
-        code: "service_unreachable",
-        message: "Sonos event stream is unreachable.",
-        retryable: true,
-      }
-    }
-
-    const handleMessage = ((event: Event) => {
-      const message = event as MessageEvent<string>
-      const body = parseJsonRecord(message.data)
-      const state = asStateEnvelope(body)
-
-      if (state) {
-        onEvent(state)
-      }
-    }) as EventListener
-
-    source.addEventListener("message", handleMessage)
-    source.addEventListener("state", handleMessage)
-    source.onerror = () => {
-      source.removeEventListener("message", handleMessage)
-      source.removeEventListener("state", handleMessage)
-      source.close()
-      onError?.({
-        ok: false,
-        code: "service_unreachable",
-        message: "Sonos event stream disconnected.",
-        retryable: true,
-      })
-    }
-
-    return {
-      ok: true,
-      subscription: {
-        close() {
-          source.removeEventListener("message", handleMessage)
-          source.removeEventListener("state", handleMessage)
-          source.close()
+        ok: true,
+        subscription: {
+          close() {
+            controller.abort()
+          },
         },
-      },
+      }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return {
+          ok: false,
+          code: "service_unreachable",
+          message: "Sonos event stream is unreachable.",
+          retryable: true,
+        }
+      }
+
+      return asNetworkFailureResult(error)
     }
   }
 

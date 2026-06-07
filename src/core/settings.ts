@@ -11,6 +11,8 @@ export type GlobalSettings = {
   connectedAccountLabel?: string
   lastError?: string
   connectRequestedAt?: number
+  /** Default Sonos group for all actions unless overridden per key. */
+  defaultTarget?: SonosActionSettings
   actionTargets?: Record<string, SonosActionSettings>
 }
 
@@ -45,7 +47,18 @@ export function parseGlobalSettings(value: unknown): GlobalSettings {
         ? asOptionalString(candidate.lastError)
         : undefined,
     actionTargets: parseActionTargets(candidate.actionTargets),
+    defaultTarget: parseDefaultTarget(candidate.defaultTarget),
   }
+}
+
+function parseDefaultTarget(value: unknown): SonosActionSettings | undefined {
+  const parsed = parseActionSettings(value)
+
+  if (parsed.householdId && parsed.groupId) {
+    return parsed
+  }
+
+  return undefined
 }
 
 function parseActionTargets(

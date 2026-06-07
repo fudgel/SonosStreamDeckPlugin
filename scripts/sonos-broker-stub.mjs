@@ -51,6 +51,9 @@ const demoTracks = [
 
 const playModeLabels = ["Play Once", "Repeat Queue", "Shuffle Queue"]
 
+// Match Sonos: first Previous restarts when past this point; at/before it, skip back.
+const previousRestartThresholdMillis = 3000
+
 const demoHouseholds = [
   {
     householdId: "house_1",
@@ -406,10 +409,7 @@ function applyCommand(record, commandType) {
       record.positionUpdatedAt = Date.now()
       break
     case "playback.previous":
-      record.trackIndex =
-        (record.trackIndex - 1 + demoTracks.length) % demoTracks.length
-      record.positionMillis = 0
-      record.positionUpdatedAt = Date.now()
+      applyPreviousTrack(record)
       break
     case "group.mute.toggle":
       record.muted = !record.muted
@@ -422,6 +422,19 @@ function applyCommand(record, commandType) {
   }
 
   record.revision += 1
+}
+
+function applyPreviousTrack(record) {
+  if (record.positionMillis > previousRestartThresholdMillis) {
+    record.positionMillis = 0
+    record.positionUpdatedAt = Date.now()
+    return
+  }
+
+  record.trackIndex =
+    (record.trackIndex - 1 + demoTracks.length) % demoTracks.length
+  record.positionMillis = 0
+  record.positionUpdatedAt = Date.now()
 }
 
 function syncPlaybackPosition(record) {
@@ -475,8 +488,8 @@ function buildGroupState(record) {
     isMuted: record.muted,
     playModeLabel,
     availableActions: {
-      canSkip: true,
-      canSkipBack: true,
+      canSkip: record.playbackStatus === "playing",
+      canSkipBack: record.playbackStatus === "playing",
       canPause: record.playbackStatus === "playing",
     },
   }

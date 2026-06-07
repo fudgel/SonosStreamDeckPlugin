@@ -161,9 +161,9 @@ Important constraint:
 - progress display should use a local timer between Sonos playback status updates
 - metadata and album art should be updated from Sonos playback metadata
 - global plugin settings should hold only non-secret connection metadata
-- per-action household and group targeting should live in action settings
-- the active Sonos target should be resolved from the current action settings at command time, not from one shared "current target" value
-- the property inspector should stay thin: it persists settings directly and asks the plugin to do auth and discovery work
+- per-action household and group targeting may override a global default group stored in plugin global settings
+- the active Sonos target should be resolved from per-key override, then default group, at command time
+- the property inspector should stay thin: PI `fetch` to the broker for auth and group lists, `setGlobalSettings` for connection and targets (no reliance on PI `sendToPlugin`)
 - reconnect-needed failures should downgrade plugin connection state and clear stale target runtimes
 
 ## Open Implementation Questions
